@@ -50,6 +50,7 @@ import Network.Wai
   , requestMethod
   , pathInfo
   )
+import Network.HTTP.Types (Status)
 import Network.HTTP.Types.Status (status200, status400, status415, status404)
 
 -- some boiler plate to convert type level lists to value level list
@@ -133,7 +134,7 @@ type family ExtractUrlList a :: [[Symbol]] where
   ExtractUrlList a = '[ExtractUrl a]
 
 class RequestDerivable a where
-  extract :: Request -> a
+  extract :: Request -> IO (Either Status a)
 
 lookupUrlParam :: (Read a) => [Text] -> Text -> Maybe (UrlParam s a)
 lookupUrlParam xs s = case elemIndex s xs of
@@ -141,13 +142,19 @@ lookupUrlParam xs s = case elemIndex s xs of
     Nothing -> Nothing
 
 instance (Read a, KnownSymbol s) => RequestDerivable (UrlParam s a) where
-  extract req = fromJust $ lookupUrlParam (pathInfo req) (pack $ symbolVal (Proxy :: Proxy s))
+  extract req = return $ case lookupUrlParam (pathInfo req) (pack $ symbolVal (Proxy :: Proxy s)) of
+    Just x -> Right x
+    Nothing -> Left $ status404
 
 class Handler a where
   execute :: Request -> a -> IO Response
 
 instance (Handler b, RequestDerivable a) => Handler (a -> b) where
-  execute r fn = execute r (fn $ extract r)
+  execute r fn = do
+    v <- extract r
+    case v of
+      Right x -> execute r (fn x)
+      Left s -> return $ responseLBS s [] ""
 
 instance {-# OVERLAPPABLE #-} (ToResponse format a) => Handler (ResponseFormat format (Endpoint a)) where
   execute r (ResponseFormat a) = do
@@ -160,7 +167,7 @@ instance (ToResponse format a, Handler (ResponseFormat formats (Endpoint a))) =>
     else execute r (ResponseFormat a :: ResponseFormat formats (Endpoint a))
     where
       doesRequestMatchContentType :: Request -> Proxy format -> Bool
-      doesRequestMatchContentType = undefined
+      doesRequestMatchContentType _ _ = True
 
 instance Handler (ResponseFormat '[] (Endpoint a)) where
   execute r _ = return $ responseLBS status415 [] "Unsupported media type"
@@ -191,7 +198,7 @@ class Convertable a b where
   convert :: a -> b
 
 class ContentType a where
-  toContentType :: Proxy a -> String
+  toContentType :: Proxy a -> ByteString
 
 instance {-# OVERLAPPABLE #-} Convertable a a where
   convert = id
