@@ -26,6 +26,9 @@ module Yaar
   , PlainText
   , HTML
   , serve
+  , Convertable(..)
+  , UrlToRequestDerivable
+  , RequestDerivable(..)
   ) where
 
 import GHC.TypeLits as TL
@@ -80,8 +83,6 @@ data HTML
 
 data UrlParam (segment::Symbol) a = UrlParam a
 
-data ReqBody (a :: [*]) b
-
 data a :> b
 
 infixr 9 :>
@@ -91,7 +92,7 @@ type Endpoint = IO
 type family IsEqual a b where
   IsEqual a a = a
   IsEqual a b = TypeError
-    ( TL.Text "Yaar handlers should be all of one type, but found at lease two of them, '"
+    ( TL.Text "Endpoint handlers should be all of one type, but found at leaset two of them, '"
       :<>: TL.ShowType a
       :<>: (TL.Text "'")
       :<>: (TL.Text " and '")
@@ -103,21 +104,23 @@ type family ExtractTC a :: * -> * where
   ExtractTC (a -> b) = ExtractTC b
   ExtractTC (m a) = m
   ExtractTC b = TypeError
-    (TL.Text "Yaar handlers should return a parametrized type, but found '"
+    (TL.Text "Endpoint handlers should return a parametrized type of form 'm a', but found '"
      :<>: TL.ShowType b
      :<>: (TL.Text "'"))
 
+type family UrlToRequestDerivable a
+
 type family ExtractHandler (a :: *)  where
   ExtractHandler (UrlParam s a :> b) = (UrlParam s a) -> (ExtractHandler b)
-  ExtractHandler (ReqBody p a :> b) = a -> (ExtractHandler b)
   ExtractHandler ((a :: Symbol) :> b) = (ExtractHandler b)
-  ExtractHandler (a :> b) = a -> (ExtractHandler b)
+  ExtractHandler (a :> b) = (UrlToRequestDerivable a) -> (ExtractHandler b)
   ExtractHandler (Get s a) = (ResponseFormat s (Endpoint a))
   ExtractHandler (Post s a) = (ResponseFormat s (Endpoint a))
 
 type family ExtractUrl a :: [Symbol] where
   ExtractUrl ((UrlParam s a) :> b) = s : "::param::": ExtractUrl b
-  ExtractUrl (a :> b) = a : ExtractUrl b 
+  ExtractUrl ((a :: Symbol) :> b) = a : ExtractUrl b
+  ExtractUrl (a :> b) = ExtractUrl b
   ExtractUrl (Get _ a) = '["GET"]
   ExtractUrl (Post _ a) = '["POST"]
 
@@ -193,13 +196,13 @@ class ContentType a where
 instance {-# OVERLAPPABLE #-} Convertable a a where
   convert = id
 
-instance (Convertable a b) => Convertable (b -> c) (a -> c) where
+instance {-# OVERLAPPABLE #-} (Convertable a b) => Convertable (b -> c) (a -> c) where
   convert fn = fn.convert
 
-instance (Convertable b c) => Convertable (a -> b) (a -> c) where
+instance {-# OVERLAPPING #-} (Convertable b c) => Convertable (a -> b) (a -> c) where
   convert fn = convert.fn
 
-instance (Convertable c a, Convertable b d) => Convertable (a -> b) (c -> d) where
+instance {-# OVERLAPPING #-} (Convertable c a, Convertable b d) => Convertable (a -> b) (c -> d) where
   convert fn = convert.fn.convert
 
 instance Convertable (UrlParam s a) a where
