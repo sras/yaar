@@ -90,13 +90,22 @@ type Endpoint = IO
 
 type family IsEqual a b where
   IsEqual a a = a
-  IsEqual a b = TypeError (TL.Text "Yaar handlers should be all of one type, but found at lease two of them, '" :<>: TL.ShowType a :<>: (TL.Text "'") :<>: (TL.Text " and '") :<>: TL.ShowType b :<>: (TL.Text "'"))
+  IsEqual a b = TypeError
+    ( TL.Text "Yaar handlers should be all of one type, but found at lease two of them, '"
+      :<>: TL.ShowType a
+      :<>: (TL.Text "'")
+      :<>: (TL.Text " and '")
+      :<>: TL.ShowType b
+      :<>: (TL.Text "'"))
 
 type family ExtractTC a :: * -> * where
   ExtractTC (a <|> b) = IsEqual (ExtractTC a) (ExtractTC b)
   ExtractTC (a -> b) = ExtractTC b
   ExtractTC (m a) = m
-  ExtractTC b = TypeError (TL.Text "Yaar handlers should return a parametrized type, but found '" :<>: TL.ShowType b :<>: (TL.Text "'"))
+  ExtractTC b = TypeError
+    (TL.Text "Yaar handlers should return a parametrized type, but found '"
+     :<>: TL.ShowType b
+     :<>: (TL.Text "'"))
 
 type family ExtractHandler (a :: *)  where
   ExtractHandler (UrlParam s a :> b) = (UrlParam s a) -> (ExtractHandler b)
@@ -107,7 +116,7 @@ type family ExtractHandler (a :: *)  where
   ExtractHandler (Post s a) = (ResponseFormat s (Endpoint a))
 
 type family ExtractUrl a :: [Symbol] where
-  ExtractUrl ((UrlParam s a) :> b) = s : "--param--": ExtractUrl b
+  ExtractUrl ((UrlParam s a) :> b) = s : "::param::": ExtractUrl b
   ExtractUrl (a :> b) = a : ExtractUrl b 
   ExtractUrl (Get _ a) = '["GET"]
   ExtractUrl (Post _ a) = '["POST"]
@@ -236,7 +245,7 @@ lookupRequest r paths = findIndex (doesMatch r) paths
     doesMatch :: Request -> [Text] -> Bool
     doesMatch req x = matcher (pathInfo req) x == Just ["GET"]
     matcher :: [Text] -> [Text] -> Maybe [Text]
-    matcher (x:xs) (y:ys) = if (y =="--param--" || x == y) then matcher xs ys else Nothing
+    matcher (x:xs) (y:ys) = if (y =="::param::" || x == y) then matcher xs ys else Nothing
     matcher [] ys = Just ys
 
 type family ChangeEndpoint a where
