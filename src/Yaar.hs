@@ -47,7 +47,7 @@ import Network.Wai
   , requestMethod
   , pathInfo
   )
-import Network.HTTP.Types.Status (status200, status400, status404)
+import Network.HTTP.Types.Status (status200, status400, status415, status404)
 
 -- some boiler plate to convert type level lists to value level list
 --
@@ -86,8 +86,7 @@ data a :> b
 
 infixr 9 :>
 
-data Endpoint a where
-  Endpoint :: IO a -> Endpoint a
+type Endpoint = IO
 
 type family IsEqual a b where
   IsEqual a a = a
@@ -137,7 +136,7 @@ instance (Handler b, RequestDerivable a) => Handler (a -> b) where
   execute r fn = execute r (fn $ extract r)
 
 instance {-# OVERLAPPABLE #-} (ToResponse format a) => Handler (ResponseFormat format (Endpoint a)) where
-  execute r (ResponseFormat (Endpoint a)) = do
+  execute r (ResponseFormat a) = do
     v <- a
     return $ toResponse v (Proxy :: Proxy format)
 
@@ -150,7 +149,7 @@ instance (ToResponse format a, Handler (ResponseFormat formats (Endpoint a))) =>
       doesRequestMatchContentType = undefined
 
 instance Handler (ResponseFormat '[] (Endpoint a)) where
-  execute r _ = return $ responseLBS status200 [] "Request is not compatible with any of the supported content types for this url"
+  execute r _ = return $ responseLBS status415 [] "Unsupported media type"
 
 instance Convertable (Endpoint a) (ResponseFormat format (Endpoint a)) where
   convert a = ResponseFormat $ a
