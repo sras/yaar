@@ -25,6 +25,7 @@ dependencies:
 - bytestring
 - wai
 - http-types
+- containers
 
 library:
   source-dirs: src
