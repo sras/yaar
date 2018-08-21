@@ -28,7 +28,7 @@ module Yaar
   , serve
   ) where
 
-import GHC.TypeLits
+import GHC.TypeLits as TL
 import Data.Proxy
 import Data.List
 import Data.Maybe
@@ -90,11 +90,13 @@ type Endpoint = IO
 
 type family IsEqual a b where
   IsEqual a a = a
+  IsEqual a b = TypeError (TL.Text "Yaar handlers should be all of one type, but found at lease two of them, '" :<>: TL.ShowType a :<>: (TL.Text "'") :<>: (TL.Text " and '") :<>: TL.ShowType b :<>: (TL.Text "'"))
 
-type family ExtractMonad a :: * -> * where
-  ExtractMonad (a <|> b) = IsEqual (ExtractMonad a) (ExtractMonad b)
-  ExtractMonad (a -> b) = ExtractMonad b
-  ExtractMonad (m a) = m
+type family ExtractTC a :: * -> * where
+  ExtractTC (a <|> b) = IsEqual (ExtractTC a) (ExtractTC b)
+  ExtractTC (a -> b) = ExtractTC b
+  ExtractTC (m a) = m
+  ExtractTC b = TypeError (TL.Text "Yaar handlers should return a parametrized type, but found '" :<>: TL.ShowType b :<>: (TL.Text "'"))
 
 type family ExtractHandler (a :: *)  where
   ExtractHandler (UrlParam s a :> b) = (UrlParam s a) -> (ExtractHandler b)
@@ -266,7 +268,7 @@ serve
   :: forall a b c e m.
   ( ManySymbolLists (ExtractUrlList a)
   , ToHandlerStack (ToHandlers a)
-  , ExtractMonad b ~ m
+  , ExtractTC b ~ m
   , ToEndpoints b e
   , ToEndpoint m Endpoint e
   , Convertable (ChangeEndpoint b) (ToHandlers a))
