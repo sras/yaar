@@ -26,6 +26,7 @@ dependencies:
 - wai
 - http-types
 - containers
+- aeson
 
 library:
   source-dirs: src

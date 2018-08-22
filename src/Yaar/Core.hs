@@ -16,34 +16,33 @@
 {-# Language BangPatterns #-}
 
 module Yaar.Core 
---  ( (:>)
---  , (<|>)
---  , Endpoint(..)
---  , ToEndpoint(..)
---  , type (<|>)
---  , UrlParam
---  , GET
---  , HEAD
---  , POST
---  , PUT
---  , DELETE
---  , CONNECT
---  , OPTIONS
---  , PATCH
---  , serve
---  , Convertable(..)
---  , ContentType(..)
---  , Encodable(..)
---  , UrlToRequestDerivable
---  , RequestDerivable(..)
---  ) 
+  ( (:>)
+  , (<|>)
+  , Endpoint(..)
+  , ToEndpoint(..)
+  , type (<|>)
+  , UrlParam
+  , GET
+  , HEAD
+  , POST
+  , PUT
+  , DELETE
+  , CONNECT
+  , OPTIONS
+  , PATCH
+  , serve
+  , Convertable(..)
+  , ContentType(..)
+  , Encodable(..)
+  , UrlToRequestDerivable
+  , RequestDerivable(..)
+  ) 
 where
 
 import GHC.TypeLits as TL
 import Data.Proxy
 import Data.List
 import Data.Maybe
-import Data.Map.Strict as DM (Map, empty, lookup, insert)
 
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy (fromStrict)
@@ -62,6 +61,7 @@ import Network.Wai
 import Network.HTTP.Types (Status, StdMethod)
 import Network.HTTP.Types.Method
 import Network.HTTP.Types.Status (status200, status400, status415, status404)
+import Yaar.Routing
 
 -- some boiler plate to convert type level lists to value level list
 --
@@ -282,49 +282,6 @@ instance (ToEndpoints b e) => ToEndpoints (a -> b) e where
 instance (ToEndpoints a e, ToEndpoints b e) => ToEndpoints (a <|> b) e where
   toEndpoints e (Pair a b) = Pair (toEndpoints e a) (toEndpoints e b)
   toEndpoints e (HandlerPair a b) = Pair (toEndpoints e a) (toEndpoints e b)
-
--- Routing Infra
-data RouteSegment = MethodSegment Text | ParamSegment | UrlSegment Text deriving (Eq, Ord, Show) 
-
-data Routes = RouteTree (Map RouteSegment Routes) | RouteIndex Int deriving (Show)
-
-toRouteSegments :: [Text] -> [RouteSegment]
-toRouteSegments (x:xs) = (MethodSegment x): (toUrlSegment <$> xs)
-  where
-    toUrlSegment :: Text -> RouteSegment
-    toUrlSegment "::param::" = ParamSegment
-    toUrlSegment x = UrlSegment x
-
-makeRoutes :: [[Text]] -> Routes
-makeRoutes !x = foldl insertRoute (RouteTree $ DM.empty) $ zip (toRouteSegments . putMethodInfront <$> x) [0..]
-  where
-  putMethodInfront :: [Text] -> [Text]
-  putMethodInfront x = (last x):(init x)
-  insertRoute :: Routes -> ([RouteSegment], Int) -> Routes
-  insertRoute (RouteTree map)  ([s], idx) = case lookupSegment s map of
-    Nothing -> RouteTree $ DM.insert s (RouteIndex idx) map
-    Just _ -> error "Overlapping routes found"
-  insertRoute (RouteTree map) ((r:rs), idx) = case lookupSegment r map of
-    Just m -> RouteTree $ DM.insert r (insertRoute m (rs, idx)) map
-    Nothing -> RouteTree $ DM.insert r (insertRoute (RouteTree DM.empty) (rs, idx)) map
-  lookupSegment :: RouteSegment -> Map RouteSegment Routes -> Maybe Routes
-  lookupSegment r m = case DM.lookup r m of
-    Just a -> Just a
-    Nothing -> DM.lookup ParamSegment m
-
-lookupRequest :: Request -> Routes -> Maybe Int
-lookupRequest r !routes = let
-  routeSegments = toRouteSegments $ (decodeUtf8 $ requestMethod r):(pathInfo r)
-  in lookUp routes routeSegments
-  where
-    lookUp :: Routes -> [RouteSegment] -> Maybe Int
-    lookUp (RouteIndex i) [] = Just i
-    lookUp routes@(RouteTree map) [] = Nothing
-    lookUp routes@(RouteTree map) (r:rs) = case DM.lookup r map of
-        Just x -> lookUp x rs
-        Nothing -> case DM.lookup ParamSegment map of
-          Just x -> lookUp x rs
-          Nothing -> Nothing
 
 serve
   :: forall a b c e m.
