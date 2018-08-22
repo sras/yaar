@@ -27,6 +27,7 @@ dependencies:
 - http-types
 - containers
 - aeson
+- deepseq
 
 library:
   source-dirs: src
@@ -41,3 +42,4 @@ tests:
     - -with-rtsopts=-N
     dependencies:
     - yaar
+    - hspec
