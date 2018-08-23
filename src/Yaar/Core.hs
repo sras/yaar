@@ -114,11 +114,11 @@ type family IsEqual a b where
       :<>: TL.ShowType b
       :<>: (TL.Text "'"))
 
-type family ExtractTC a :: * -> * where
-  ExtractTC (a <|> b) = IsEqual (ExtractTC a) (ExtractTC b)
-  ExtractTC (a -> b) = ExtractTC b
-  ExtractTC (m a) = m
-  ExtractTC b = TypeError
+type family ExtractType a :: * -> * where
+  ExtractType (a <|> b) = IsEqual (ExtractType a) (ExtractType b)
+  ExtractType (a -> b) = ExtractType b
+  ExtractType (m a) = m
+  ExtractType b = TypeError
     (TL.Text "Endpoint handlers should return a parametrized type of form 'm a', but found '"
      :<>: TL.ShowType b
      :<>: (TL.Text "'"))
@@ -287,7 +287,7 @@ serve
   :: forall a b c e m.
   ( ManySymbolLists (ExtractUrlList a)
   , ToHandlerStack (ToHandlers a)
-  , ExtractTC b ~ m
+  , ExtractType b ~ m
   , ToEndpoints b e
   , ToEndpoint m Endpoint e
   , Convertable (ChangeEndpoint b) (ToHandlers a))
