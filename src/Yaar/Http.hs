@@ -29,8 +29,7 @@ import Data.Proxy
 
 data OctetStream
 
-
--- Code to add support for input coming in request body
+-- to add support for input coming in request body
 data JSON
 
 data ReqBody s a = ReqBody a
@@ -47,7 +46,7 @@ instance (FromJSON a) => RequestDerivable (ReqBody JSON a) where
 instance Convertable (ReqBody s a) a where
   convert (ReqBody a) = a
 
--- Code to implement input via header
+-- to implement input via header
 
 data Header (s :: Symbol) a = Header a
 
@@ -59,23 +58,34 @@ instance (Read a, KnownSymbol s) => RequestDerivable (Header s a) where
 instance Convertable (Header s a) a where
   convert (Header a) = a
 --
--- Code to implement output Headers
+--  to implement output Headers
 
-data ResponseHeader (s :: [Symbol]) a = ResponseHeader a
+data ResponseHeader (s :: [Symbol]) a = ResponseHeader [(Text, Text)] a
 
 type family WrappedInHeader a where
   WrappedInHeader (ResponseHeader s a) = a
   WrappedInHeader a = a
 
-class HeaderAttachable a (s :: [Symbol]) where
-  addHeader :: (KnownSymbol s1) => (Proxy s1) -> a -> ResponseHeader (s1:s) (WrappedInHeader a)
+type family AHParent a where
+  AHParent (ResponseHeader s a) = s
+  AHParent a = '[]
 
-instance (WrappedInHeader a ~ a) => HeaderAttachable a '[] where
-  addHeader (p :: Proxy s) a = ResponseHeader a :: ResponseHeader '[s] a
--- 
-instance HeaderAttachable (ResponseHeader s2 a) s2 where
-  addHeader (p :: Proxy s1) (ResponseHeader a) = ResponseHeader a :: ResponseHeader (s1:s2) a
--- 
+class HeaderAttachable a where
+  addHeader :: (KnownSymbol s1) => (Proxy s1) -> Text -> a -> ResponseHeader (s1:AHParent a) (WrappedInHeader a)
+
+instance  {-# OVERLAPPABLE #-} (AHParent a ~ '[], WrappedInHeader a ~ a) => HeaderAttachable a where
+  addHeader (p :: Proxy s) v a =
+    let
+      headerName = pack $ symbolVal (Proxy :: Proxy s)
+      in (ResponseHeader [(headerName, v)]  a) :: ResponseHeader (s:'[]) a
+
+instance HeaderAttachable (ResponseHeader s2 a) where
+  addHeader (p :: Proxy s1) v (ResponseHeader s a) =
+    let
+      headerName = pack $ symbolVal (Proxy :: Proxy s1)
+    in (ResponseHeader ((headerName,v):s) a) :: ResponseHeader (s1:s2) a
+instance (ToResponse format value) => ToResponse format (ResponseHeader headerNames value) where
+  toResponse value _  = undefined
 --
 data HTML
 

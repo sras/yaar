@@ -36,6 +36,7 @@ module Yaar.Core
   , Encodable(..)
   , UrlToRequestDerivable
   , RequestDerivable(..)
+  , ToResponse(..)
   ) 
 where
 
