@@ -1,15 +1,42 @@
 {-# Language OverloadedStrings #-}
+{-# Language TypeOperators #-}
+{-# Language DataKinds #-}
 
+import Yaar
 import Yaar.Routing
 import Test.Hspec
 import Network.Wai.Internal
 import Network.Wai (defaultRequest)
+import Network.Wai.Test
 import Control.Exception
 import Control.DeepSeq (force)
 import Data.Text (Text)
+import Data.Proxy
+
+type TestServer =  "home" :> "profile" :> "bio" :> (GET '[PlainText, HTML] String)
+               <|> "home" :> "profile" :> "orders" :> (GET PlainText Text)
+
+server =  handlerBio
+      <|> handlerOrders
+
+handlerBio :: IO String
+handlerBio = return $ "Index"
+
+handlerOrders :: IO Text
+handlerOrders = return "Orders"
+
+api :: Proxy TestServer
+api = Proxy
+
+app = serve api server ()
 
 main :: IO ()
 main = hspec $ do
+  describe "basic-behavior" $ do
+    it "should generate the right response" $ do
+      let session = request (setPath defaultRequest "/home/profile/bio")
+      response <- runSession session app
+      simpleBody response `shouldBe` "Index"
   describe "routing" $ do
     it "should match when there is a param route but no exact match" $
       let

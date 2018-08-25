@@ -9,13 +9,15 @@
 {-# Language ScopedTypeVariables #-}
 
 module Yaar.Http
---   ( HTML
---   , PlainText
---   , JSON
---   , OctetStream
---   , ReqBody
---   , RequestHeader
---   )
+  ( HTML
+  , PlainText
+  , JSON
+  , OctetStream
+  , ReqBody
+  , RequestHeader
+  , ResponseHeader
+  , addHeader
+  )
 where
 
 import Yaar.Core
@@ -98,11 +100,17 @@ data HTML
 
 data PlainText
 
-instance (Show a) => Encodable PlainText a where
-  encode a _ = encodeUtf8 $ pack $ show a
+instance Encodable PlainText Text where
+  encode a _ = encodeUtf8 $ a
 
-instance (Show a) => Encodable HTML a where
-  encode a _ = encodeUtf8 $ pack $ show a
+instance Encodable HTML Text where
+  encode a _ = encodeUtf8 $ a
+
+instance Encodable PlainText String where
+  encode a _ = encodeUtf8 $ pack $ a
+
+instance Encodable HTML String where
+  encode a _ = encodeUtf8 $ pack $ a
 
 instance ContentType PlainText where
   toContentType _ = "text/plain; charset=utf-8"
