@@ -33,10 +33,14 @@ app = serve api server ()
 main :: IO ()
 main = hspec $ do
   describe "basic-behavior" $ do
-    it "should generate the right response" $ do
+    it "should generate the right response - 1" $ do
       let session = request (setPath defaultRequest "/home/profile/bio")
       response <- runSession session app
       simpleBody response `shouldBe` "Index"
+    it "should generate the right response - 2" $ do
+      let session = request (setPath defaultRequest "/home/profile/orders")
+      response <- runSession session app
+      simpleBody response `shouldBe` "Orders"
   describe "routing" $ do
     it "should match when there is a param route but no exact match" $
       let

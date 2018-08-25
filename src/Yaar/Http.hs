@@ -113,7 +113,7 @@ instance Encodable HTML String where
   encode a _ = encodeUtf8 $ pack $ a
 
 instance ContentType PlainText where
-  toContentType _ = "text/plain; charset=utf-8"
+  doesMatch _  v = v == "text/plain; charset=utf-8"  
 
 instance ContentType HTML where
-  toContentType _ = "text/html"
+  doesMatch _ v = v == "text/html"

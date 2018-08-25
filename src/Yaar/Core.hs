@@ -57,9 +57,10 @@ import Network.Wai
   , Response
   , ResponseReceived
   , requestMethod
+  , requestHeaders
   , pathInfo
   )
-import Network.HTTP.Types (Status, StdMethod)
+import Network.HTTP.Types (Status, StdMethod, HeaderName, hAccept)
 import Network.HTTP.Types.Method
 import Network.HTTP.Types.Status (status200, status400, status415, status404)
 import Yaar.Routing
@@ -183,13 +184,18 @@ instance {-# OVERLAPPABLE #-} (ToResponse format a) => Handler (ResponseFormat f
     v <- a
     return $ toResponse v (Proxy :: Proxy format)
 
-instance (ToResponse format a, Handler (ResponseFormat formats (Endpoint a))) => Handler (ResponseFormat (format:formats) (Endpoint a)) where
-  execute r (ResponseFormat a) = if doesRequestMatchContentType r (Proxy :: Proxy format)
+instance (ToResponse format a, ContentType format, Handler (ResponseFormat formats (Endpoint a))) => Handler (ResponseFormat (format:formats) (Endpoint a)) where
+  execute r (ResponseFormat a) = if doesRequestMatchContentType r
     then execute r (ResponseFormat a :: ResponseFormat format (Endpoint a))
     else execute r (ResponseFormat a :: ResponseFormat formats (Endpoint a))
     where
-      doesRequestMatchContentType :: Request -> Proxy format -> Bool
-      doesRequestMatchContentType _ _ = True
+      doesRequestMatchContentType :: Request -> Bool
+      doesRequestMatchContentType request =
+        case lookupHeader request hAccept of
+          Just x ->  doesMatch (Proxy :: Proxy format) x
+          Nothing -> True
+      lookupHeader :: Request -> HeaderName -> Maybe ByteString
+      lookupHeader r h = lookup h $ requestHeaders r
 
 instance Handler (ResponseFormat '[] (Endpoint a)) where
   execute r _ = return $ responseLBS status415 [] "Unsupported media type"
@@ -220,7 +226,7 @@ class Convertable a b where
   convert :: a -> b
 
 class ContentType a where
-  toContentType :: Proxy a -> ByteString
+  doesMatch :: Proxy a -> ByteString -> Bool
 
 instance {-# OVERLAPPABLE #-} Convertable a a where
   convert = id
