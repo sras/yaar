@@ -14,7 +14,7 @@ module Yaar.Http
 --   , JSON
 --   , OctetStream
 --   , ReqBody
---   , Header
+--   , RequestHeader
 --   )
 where
 
@@ -22,9 +22,15 @@ import Yaar.Core
 import Data.Text.Encoding (encodeUtf8)
 import Data.Text (pack, unpack, Text)
 import Data.Aeson
-import Network.Wai (requestBody)
+import Network.Wai
+  ( requestBody
+  , mapResponseHeaders
+  )
 import Network.HTTP.Types.Status (status400)
+import Network.HTTP.Types (HeaderName)
 import GHC.TypeLits
+import Data.ByteString (ByteString)
+import Data.String
 import Data.Proxy
 
 data OctetStream
@@ -48,19 +54,19 @@ instance Convertable (ReqBody s a) a where
 
 -- to implement input via header
 
-data Header (s :: Symbol) a = Header a
+data RequestHeader (s :: Symbol) a = RequestHeader a
 
-type instance UrlToRequestDerivable (Header s a) = Header s a
+type instance UrlToRequestDerivable (RequestHeader s a) = RequestHeader s a
 
-instance (Read a, KnownSymbol s) => RequestDerivable (Header s a) where
-  extract request = return $ Right $ Header (read "")
+instance (Read a, KnownSymbol s) => RequestDerivable (RequestHeader s a) where
+  extract request = return $ Right $ RequestHeader (read "")
 
-instance Convertable (Header s a) a where
-  convert (Header a) = a
+instance Convertable (RequestHeader s a) a where
+  convert (RequestHeader a) = a
 --
 --  to implement output Headers
 
-data ResponseHeader (s :: [Symbol]) a = ResponseHeader [(Text, Text)] a
+data ResponseHeader (s :: [Symbol]) a = ResponseHeader [(HeaderName, ByteString)] a
 
 type family WrappedInHeader a where
   WrappedInHeader (ResponseHeader s a) = a
@@ -76,16 +82,17 @@ class HeaderAttachable a where
 instance  {-# OVERLAPPABLE #-} (AHParent a ~ '[], WrappedInHeader a ~ a) => HeaderAttachable a where
   addHeader (p :: Proxy s) v a =
     let
-      headerName = pack $ symbolVal (Proxy :: Proxy s)
-      in (ResponseHeader [(headerName, v)]  a) :: ResponseHeader (s:'[]) a
+      headerName = symbolVal (Proxy :: Proxy s)
+      in (ResponseHeader [(fromString headerName, encodeUtf8 v)]  a) :: ResponseHeader (s:'[]) a
 
 instance HeaderAttachable (ResponseHeader s2 a) where
   addHeader (p :: Proxy s1) v (ResponseHeader s a) =
     let
-      headerName = pack $ symbolVal (Proxy :: Proxy s1)
-    in (ResponseHeader ((headerName,v):s) a) :: ResponseHeader (s1:s2) a
+      headerName = symbolVal (Proxy :: Proxy s1)
+    in (ResponseHeader ((fromString headerName, encodeUtf8 v):s) a) :: ResponseHeader (s1:s2) a
+
 instance (ToResponse format value) => ToResponse format (ResponseHeader headerNames value) where
-  toResponse value _  = undefined
+  toResponse (ResponseHeader headers v) p = mapResponseHeaders (\x -> headers ++ x) $ toResponse v p
 --
 data HTML
 
