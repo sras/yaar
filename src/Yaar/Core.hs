@@ -226,7 +226,9 @@ class Convertable a b where
   convert :: a -> b
 
 class ContentType a where
+  getContentType :: Proxy a -> ByteString
   doesMatch :: Proxy a -> ByteString -> Bool
+  doesMatch p v = getContentType p == v
 
 instance {-# OVERLAPPABLE #-} Convertable a a where
   convert = id
