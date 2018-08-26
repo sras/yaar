@@ -32,6 +32,7 @@ import Network.HTTP.Types.Status (status400)
 import Network.HTTP.Types (HeaderName)
 import GHC.TypeLits
 import Data.ByteString (ByteString)
+import qualified Data.ByteString.Lazy as LB
 import Data.String
 import Data.Proxy
 
@@ -53,6 +54,13 @@ instance (FromJSON a) => RequestDerivable (ReqBody JSON a) where
 
 instance Convertable (ReqBody s a) a where
   convert (ReqBody a) = a
+
+-- For output in json
+instance ContentType JSON where
+  getContentType _ = "application/json"
+
+instance (ToJSON a) => Encodable JSON a where
+  encode v _ =  LB.toStrict $ Data.Aeson.encode $ toJSON v
 
 -- to implement input via header
 

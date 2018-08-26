@@ -60,7 +60,7 @@ import Network.Wai
   , requestHeaders
   , pathInfo
   )
-import Network.HTTP.Types (Status, StdMethod, HeaderName, hAccept)
+import Network.HTTP.Types (Status, StdMethod, HeaderName, hAccept, hContentType)
 import Network.HTTP.Types.Method
 import Network.HTTP.Types.Status (status200, status400, status415, status404)
 import Yaar.Routing
@@ -249,7 +249,7 @@ instance (Convertable a c, Handler c, Convertable b d) => Convertable (a <|> b) 
   convert (Pair a b) = HandlerPair (convert a) (convert b)
 
 instance {-# OVERLAPPABLE #-} (Encodable format a, ContentType format) => ToResponse format a where
-  toResponse a p = responseLBS status200 [] $ fromStrict $ encode a p
+  toResponse a p = responseLBS status200 [(hContentType, getContentType p)] $ fromStrict $ encode a p
 
 data a <|> b where
   Pair :: a -> b -> a <|> b

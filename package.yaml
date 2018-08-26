@@ -35,7 +35,7 @@ library:
 tests:
   yaar-test:
     main:                Spec.hs
-    source-dirs:         test
+    source-dirs:         test, src
     dependencies:
     - wai
     - wai-extra
