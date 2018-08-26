@@ -17,6 +17,7 @@ module Yaar.Http
   , RequestHeader
   , ResponseHeader
   , addHeader
+  , NoContent(..)
   )
 where
 
@@ -27,8 +28,9 @@ import Data.Aeson
 import Network.Wai
   ( requestBody
   , mapResponseHeaders
+  , responseLBS
   )
-import Network.HTTP.Types.Status (status400)
+import Network.HTTP.Types.Status (status400, status200)
 import Network.HTTP.Types (HeaderName)
 import GHC.TypeLits
 import Data.ByteString (ByteString)
@@ -37,6 +39,14 @@ import Data.String
 import Data.Proxy
 
 data OctetStream
+
+data NoContent = NoContent
+
+instance ContentType NoContent where
+  getContentType _ = Nothing
+
+instance Encodable '[] NoContent where
+  encode _ _ = ""
 
 -- to add support for input coming in request body
 data JSON
@@ -57,7 +67,7 @@ instance Convertable (ReqBody s a) a where
 
 -- For output in json
 instance ContentType JSON where
-  getContentType _ = "application/json"
+  getContentType _ = Just "application/json"
 
 instance (ToJSON a) => Encodable JSON a where
   encode v _ =  LB.toStrict $ Data.Aeson.encode $ toJSON v
@@ -121,7 +131,7 @@ instance Encodable HTML String where
   encode a _ = encodeUtf8 $ pack $ a
 
 instance ContentType PlainText where
-  getContentType _ = "text/plain"
+  getContentType _ = Just "text/plain"
 
 instance ContentType HTML where
-  getContentType _ = "text/html"
+  getContentType _ = Just "text/html"

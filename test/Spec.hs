@@ -24,26 +24,31 @@ import qualified Data.ByteString.Lazy as LB
 
 type TestServer =  "home" :> "profile" :> "bio" :> (GET '[PlainText, HTML] String)
                <|> "home" :> "profile" :> "orders" :> (GET PlainText Text)
-               <|> "home" :> "profile" :> "resume" :> (GET [PlainText, JSON] Resume)
+               <|> "home" :> "profile" :> "resume" :> (GET '[PlainText, JSON] Resume)
+               <|> "home" :> "profile" :> "resume" :> "add" :> ReqBody JSON Resume :> (POST '[JSON] Resume)
+               <|> "home" :> "post" :> UrlParam "id" Int :> (GET PlainText String)
+               <|> "request" :> "with" :> "header" :> UrlParam "id" Int :> (GET PlainText (ResponseHeader ["custom-header-1", "custom-header-2"] String))
 
-data Resume = Resume { name :: Text, otherStuff :: Text } deriving (Generic, Show)
+data Resume = Resume { name :: Text } deriving (Generic, Show)
 
 resumePlainEncoding :: ByteString
 resumePlainEncoding = "Plain text encoding of resume"
 
 instance ToJSON Resume where
-  toJSON _ = object [ "json-of" .= ("resume" :: Text) ]
+  toJSON = genericToJSON defaultOptions
 
 instance FromJSON Resume where
   parseJSON = genericParseJSON defaultOptions
 
 instance Encodable PlainText Resume where
   encode v _ = resumePlainEncoding
---
 
 server =  handlerBio
       <|> handlerOrders
       <|> handlerResume
+      <|> handlerAddResume
+      <|> handlerPost
+      <|> handlerWithHeader
 
 handlerBio :: IO String
 handlerBio = return $ "Index"
@@ -52,7 +57,19 @@ handlerOrders :: IO Text
 handlerOrders = return "Orders"
 
 handlerResume :: IO Resume
-handlerResume = return $ Resume { name = "Jane Doe", otherStuff = "lorem ipsm" }
+handlerResume = return $ Resume { name = "Jane Doe" }
+
+handlerAddResume :: Resume -> IO Resume
+handlerAddResume r = return $ r
+
+handlerPost :: Int -> IO String
+handlerPost postId = return $ "Post " ++ (show postId)
+
+handlerWithHeader :: Int -> IO (ResponseHeader '["custom-header-1", "custom-header-2"] String)
+handlerWithHeader id = return $
+  addHeader (Proxy :: Proxy "custom-header-1") "header-1-value" $
+  addHeader (Proxy :: Proxy "custom-header-2") "header-2-value" $
+  "Header Request " ++ (show id)
 
 api :: Proxy TestServer
 api = Proxy
@@ -81,6 +98,13 @@ main = hspec $ do
       response <- runSession session app
       simpleBody response `shouldBe` (LB.fromStrict resumePlainEncoding)
       (statusCode.simpleStatus) response `shouldBe` 200
+    it "should return error for not requesting supported content type" $ do
+      let
+        session = do
+          r <- request (setPath (defaultRequest { requestHeaders = [(hAccept, "blah!")] }) "/home/profile/resume")
+          return r
+      response <- runSession session app
+      (statusCode.simpleStatus) response `shouldBe` 415
     it "should generate the right response or matching request content type" $ do
       let 
         session = do
@@ -88,7 +112,37 @@ main = hspec $ do
           assertContentType "application/json" r
           return r
       response <- runSession session app
-      simpleBody response `shouldBe` "{\"json-of\":\"resume\"}"
+      simpleBody response `shouldBe` "{\"name\":\"Jane Doe\"}"
+      (statusCode.simpleStatus) response `shouldBe` 200
+    it "should pass the param from url to handler" $ do
+      let 
+        session = do
+          r <- request (setPath (defaultRequest { requestHeaders = [(hAccept, "application/json")] }) "/home/post/id/21")
+          assertContentType "text/plain" r
+          return r
+      response <- runSession session app
+      simpleBody response `shouldBe` "Post 21"
+      (statusCode.simpleStatus) response `shouldBe` 200
+    it "should respond with expected headers" $ do
+      let 
+        session = do
+          r <- request (setPath defaultRequest "/request/with/header/id/21")
+          assertContentType "text/plain" r
+          assertHeader "custom-header-1" "header-1-value" r
+          assertHeader "custom-header-2" "header-2-value" r
+          return r
+      response <- runSession session app
+      simpleBody response `shouldBe` "Header Request 21"
+      (statusCode.simpleStatus) response `shouldBe` 200
+    it "should respond back with posted item" $ do
+      let 
+        session = do
+          let request = (setPath (defaultRequest { requestMethod = "POST"}) "/home/profile/resume/add")
+          r <- srequest $ SRequest request $ Data.Aeson.encode $ Resume "John Doe"
+          assertContentType "application/json" $ r
+          return r
+      response <- runSession session app
+      simpleBody response `shouldBe` "{\"name\":\"John Doe\"}"
       (statusCode.simpleStatus) response `shouldBe` 200
   describe "routing" $ do
     it "should match when there is a param route but no exact match" $

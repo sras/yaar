@@ -37,6 +37,8 @@ module Yaar.Core
   , UrlToRequestDerivable
   , RequestDerivable(..)
   , ToResponse(..)
+  , Handler(..)
+  , ResponseFormat(..)
   ) 
 where
 
@@ -197,7 +199,7 @@ instance (ToResponse format a, ContentType format, Handler (ResponseFormat forma
       lookupHeader :: Request -> HeaderName -> Maybe ByteString
       lookupHeader r h = lookup h $ requestHeaders r
 
-instance Handler (ResponseFormat '[] (Endpoint a)) where
+instance {-# OVERLAPPABLE #-} Handler (ResponseFormat '[] (Endpoint a)) where
   execute r _ = return $ responseLBS status415 [] "Unsupported media type"
 
 instance Convertable (Endpoint a) (ResponseFormat format (Endpoint a)) where
@@ -226,9 +228,12 @@ class Convertable a b where
   convert :: a -> b
 
 class ContentType a where
-  getContentType :: Proxy a -> ByteString
+  getContentType :: Proxy a -> Maybe ByteString
   doesMatch :: Proxy a -> ByteString -> Bool
-  doesMatch p v = getContentType p == v
+  doesMatch p v =
+    case getContentType p of
+      Just x -> x == v
+      Nothing -> True
 
 instance {-# OVERLAPPABLE #-} Convertable a a where
   convert = id
@@ -249,7 +254,10 @@ instance (Convertable a c, Handler c, Convertable b d) => Convertable (a <|> b) 
   convert (Pair a b) = HandlerPair (convert a) (convert b)
 
 instance {-# OVERLAPPABLE #-} (Encodable format a, ContentType format) => ToResponse format a where
-  toResponse a p = responseLBS status200 [(hContentType, getContentType p)] $ fromStrict $ encode a p
+  toResponse a p =
+    case getContentType p of
+      Just ct -> responseLBS status200 [(hContentType, ct)] $ fromStrict $ encode a p
+      Nothing -> responseLBS status200 [] $ fromStrict $ encode a p
 
 data a <|> b where
   Pair :: a -> b -> a <|> b
