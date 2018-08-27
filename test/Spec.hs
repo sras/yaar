@@ -3,6 +3,7 @@
 {-# Language DataKinds #-}
 {-# Language DeriveGeneric #-}
 {-# Language MultiParamTypeClasses #-}
+{-# Language TypeFamilies #-}
 
 import Yaar
 import Yaar.Routing
