@@ -22,16 +22,18 @@ module Yaar.Http
 where
 
 import Yaar.Core
-import Data.Text.Encoding (encodeUtf8)
+import Data.Text.Encoding (encodeUtf8, decodeUtf8)
 import Data.Text (pack, unpack, Text)
 import Data.Aeson
 import Network.Wai
   ( requestBody
+  , requestHeaders
   , mapResponseHeaders
   , responseLBS
+  , queryString
   )
-import Network.HTTP.Types.Status (status400, status200)
-import Network.HTTP.Types (HeaderName)
+import Network.HTTP.Types.Status (Status, status400, status200)
+import Network.HTTP.Types (HeaderName, Header)
 import GHC.TypeLits
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as LB
@@ -79,13 +81,31 @@ data RequestHeader (s :: Symbol) a = RequestHeader a
 type instance UrlToRequestDerivable (RequestHeader s a) = RequestHeader s a
 
 instance (Read a, KnownSymbol s) => RequestDerivable (RequestHeader s a) where
-  extract request = return $ Right $ RequestHeader (read "")
+  extract request = return $ extractHeaderValue (requestHeaders request) (symbolVal (Proxy :: Proxy s))
+    where
+      extractHeaderValue :: (Read a) => [Header] -> String -> Either Status (RequestHeader s a)
+      extractHeaderValue headers headerName =
+        case lookup (fromString headerName) headers of
+          Just x -> Right $ RequestHeader $ read $ unpack $ decodeUtf8 $ x
+          Nothing -> Left $ status400
 
 instance Convertable (RequestHeader s a) a where
   convert (RequestHeader a) = a
---
---  to implement output Headers
 
+-- to implement support for query parameters
+
+data QueryParam s a = QueryParam a
+
+type instance UrlToRequestDerivable (QueryParam s a) = QueryParam s a
+
+instance (KnownSymbol s, Read a) => RequestDerivable (QueryParam s (Maybe a)) where
+  extract r =
+    case lookup (encodeUtf8 $ pack $ symbolVal (Proxy :: Proxy s)) $ queryString r of
+      Just (Just a) -> return $ Right $ QueryParam $ read $ unpack $ decodeUtf8 a
+      Just Nothing -> return $ Right $ QueryParam $ Nothing
+      Nothing -> return $ Right $ QueryParam Nothing
+
+--  to implement output Headers
 data ResponseHeader (s :: [Symbol]) a = ResponseHeader [(HeaderName, ByteString)] a
 
 type family WrappedInHeader a where

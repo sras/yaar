@@ -32,9 +32,6 @@ type TestServer =  "home" :> "profile" :> "bio" :> (GET '[PlainText, HTML] Strin
 
 data Resume = Resume { name :: Text } deriving (Generic, Show)
 
-resumePlainEncoding :: ByteString
-resumePlainEncoding = "Plain text encoding of resume"
-
 instance ToJSON Resume where
   toJSON = genericToJSON defaultOptions
 
@@ -42,7 +39,7 @@ instance FromJSON Resume where
   parseJSON = genericParseJSON defaultOptions
 
 instance Encodable PlainText Resume where
-  encode v _ = resumePlainEncoding
+  encode v _ = encodeUtf8 $ pack $ show v
 
 server =  handlerBio
       <|> handlerOrders
@@ -97,7 +94,7 @@ main = hspec $ do
           assertContentType "text/plain" r
           return r
       response <- runSession session app
-      simpleBody response `shouldBe` (LB.fromStrict resumePlainEncoding)
+      simpleBody response `shouldBe` "Resume {name = \"Jane Doe\"}"
       (statusCode.simpleStatus) response `shouldBe` 200
     it "should return error for not requesting supported content type" $ do
       let
