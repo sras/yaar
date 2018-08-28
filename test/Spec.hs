@@ -27,9 +27,10 @@ type TestServer =  "home" :> "profile" :> "bio" :> (GET '[PlainText, HTML] Strin
                <|> "home" :> "profile" :> "orders" :> (GET PlainText Text)
                <|> "home" :> "profile" :> "resume" :> (GET '[PlainText, JSON] Resume)
                <|> "home" :> "profile" :> "resume" :> "add" :> ReqBody JSON Resume :> (POST '[JSON] Resume)
-               <|> "home" :> "post" :> UrlParam "id" Int :> (GET PlainText String)
-               <|> "request" :> "with" :> "header" :> UrlParam "id" Int :> (GET PlainText (ResponseHeader ["custom-header-1", "custom-header-2"] String))
-               <|> "request" :> "with" :> "input" :> "header" :> RequestHeader "input-header":> GET '[PlainText] String
+               <|> "home" :> "post" :> UrlParam "id" Text :> (GET PlainText String)
+               <|> "request" :> "with" :> "header" :> UrlParam "id" Text :> (GET PlainText (ResponseHeader ["custom-header-1", "custom-header-2"] String))
+               <|> "request" :> "with" :> "input" :> "header" :> RequestHeader "input-header" Text :> GET '[PlainText] String
+               <|> "request" :> "with" :> "no" :> "content" :> GET '[] NoContent
 
 data Resume = Resume { name :: Text } deriving (Generic, Show)
 
@@ -49,6 +50,7 @@ server =  handlerBio
       <|> handlerPost
       <|> handlerWithHeader
       <|> handlerHeaderInput
+      <|> handlerWithNoContent
 
 handlerBio :: IO String
 handlerBio = return $ "Index"
@@ -62,17 +64,21 @@ handlerResume = return $ Resume { name = "Jane Doe" }
 handlerAddResume :: Resume -> IO Resume
 handlerAddResume r = return $ r
 
-handlerPost :: Int -> IO String
-handlerPost postId = return $ "Post " ++ (show postId)
+handlerPost :: Text -> IO String
+handlerPost postId = return $ "Post " ++ (unpack postId)
 
 handlerHeaderInput :: Text -> IO String
 handlerHeaderInput headerInput = return $ "Header value = " ++ (unpack headerInput)
 
-handlerWithHeader :: Int -> IO (ResponseHeader '["custom-header-1", "custom-header-2"] String)
+handlerWithNoContent :: IO NoContent
+handlerWithNoContent = do
+  return $ NoContent
+
+handlerWithHeader :: Text -> IO (ResponseHeader '["custom-header-1", "custom-header-2"] String)
 handlerWithHeader id = return $
   addHeader (Proxy :: Proxy "custom-header-1") "header-1-value" $
   addHeader (Proxy :: Proxy "custom-header-2") "header-2-value" $
-  "Header Request " ++ (show id)
+  "Header Request " ++ (unpack id)
 
 api :: Proxy TestServer
 api = Proxy
@@ -156,6 +162,15 @@ main = hspec $ do
           return r
       response <- runSession session app
       simpleBody response `shouldBe` "Header value = Test input String"
+      (statusCode.simpleStatus) response `shouldBe` 200
+    it "should respond back with empty body" $ do
+      let 
+        session = do
+          let req = (setPath defaultRequest "/request/with/no/content")
+          r <- request req
+          return r
+      response <- runSession session app
+      simpleBody response `shouldBe` ""
       (statusCode.simpleStatus) response `shouldBe` 200
   describe "routing" $ do
     it "should match when there is a param route but no exact match" $

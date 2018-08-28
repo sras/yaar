@@ -48,8 +48,10 @@ data NoContent = NoContent
 instance ContentType NoContent where
   getContentType _ = Nothing
 
-instance Encodable '[] NoContent where
-  encode _ _ = ""
+instance Handler (ResponseFormat '[] (Endpoint NoContent)) where
+  execute r (ResponseFormat h) = do
+    _ <- h
+    return $ responseLBS status200 [] ""
 
 -- to add support for input coming in request body
 data JSON
@@ -76,20 +78,23 @@ instance (ToJSON a) => Encodable JSON a where
   encode v _ =  LB.toStrict $ Data.Aeson.encode $ toJSON v
 
 -- to implement input via header
-data RequestHeader (s :: Symbol) = RequestHeader Text
+data RequestHeader (s :: Symbol) a = RequestHeader a
 
-type instance UrlToRequestDerivable (RequestHeader s) = RequestHeader s
+type instance UrlToRequestDerivable (RequestHeader s a) = RequestHeader s a
 
-instance (KnownSymbol s) => RequestDerivable (RequestHeader s) where
+instance (FromByteString a, KnownSymbol s) => RequestDerivable (RequestHeader s a) where
   extract request = return $ extractHeaderValue (requestHeaders request) (symbolVal (Proxy :: Proxy s))
     where
-      extractHeaderValue :: [Header] -> String -> Either Status (RequestHeader s)
+      extractHeaderValue :: (FromByteString a) => [Header] -> String -> Either Status (RequestHeader s a)
       extractHeaderValue headers headerName =
         case lookup (fromString headerName) headers of
-          Just x -> Right $ RequestHeader $ decodeUtf8 $ x
+          Just x -> Right $ RequestHeader $ fromByteString $ x
           Nothing -> Left $ status400
 
-instance Convertable (RequestHeader s) Text where
+instance FromByteString Text where
+  fromByteString = decodeUtf8
+
+instance Convertable (RequestHeader s a) a where
   convert (RequestHeader a) = a
 
 -- to implement support for query parameters
@@ -98,10 +103,10 @@ data QueryParam s a = QueryParam a
 
 type instance UrlToRequestDerivable (QueryParam s a) = QueryParam s a
 
-instance (KnownSymbol s, Read a) => RequestDerivable (QueryParam s (Maybe a)) where
+instance (KnownSymbol s, FromByteString a) => RequestDerivable (QueryParam s (Maybe a)) where
   extract r =
     case lookup (encodeUtf8 $ pack $ symbolVal (Proxy :: Proxy s)) $ queryString r of
-      Just (Just a) -> return $ Right $ QueryParam $ read $ unpack $ decodeUtf8 a
+      Just (Just a) -> return $ Right $ QueryParam $ Just $ fromByteString a
       Just Nothing -> return $ Right $ QueryParam $ Nothing
       Nothing -> return $ Right $ QueryParam Nothing
 

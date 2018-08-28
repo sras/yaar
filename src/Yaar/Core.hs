@@ -39,6 +39,7 @@ module Yaar.Core
   , ToResponse(..)
   , Handler(..)
   , ResponseFormat(..)
+  , FromByteString(..)
   ) 
 where
 
@@ -136,30 +137,21 @@ type family ExtractHandler (a :: *)  where
   ExtractHandler (a :> b) = (UrlToRequestDerivable a) -> (ExtractHandler b)
   ExtractHandler (b s a) = (ResponseFormat s (Endpoint a))
 
+type EUMessage (a :: Symbol) = (TL.Text "type ") :<>: (TL.Text a) :<>: (TL.Text " require a format type and a value type. Please check all your endpoint types")
+
 type family ExtractUrl (a :: k) :: [Symbol] where
   ExtractUrl ((UrlParam s a) :> b) = s : "::param::": ExtractUrl b
   ExtractUrl ((a :: Symbol) :> b) = a : ExtractUrl b
   ExtractUrl (a :> b) = ExtractUrl b
-  ExtractUrl (GET a) = TypeError (TL.Text "type GET require a format type and a value type. Please check all your endpoint types")
-  ExtractUrl (HEAD a) = TypeError (TL.Text "type HEAD require a format type and a value type. Please check all your endpoint types")
-  ExtractUrl (POST a) = TypeError (TL.Text "type POST require a format type and a value type. Please check all your endpoint types")
-  ExtractUrl (PUT a) = TypeError (TL.Text "type PUT require a format type and a value type. Please check all your endpoint types")
-  ExtractUrl (DELETE a) = TypeError (TL.Text "type DELETE require a format type and a value type. Please check all your endpoint types")
-  ExtractUrl (CONNECT a) = TypeError (TL.Text "type CONNECT require a format type and a value type. Please check all your endpoint types")
-  ExtractUrl (OPTIONS a) = TypeError (TL.Text "type OPTIONS require a format type and a value type. Please check all your endpoint types")
-  ExtractUrl (PATCH a) = TypeError (TL.Text "type PATCH require a format type and a value type. Please check all your endpoint types")
-  ExtractUrl (CUSTOM s a) = TypeError (TL.Text "type CUSTOM require a format type and a value type. Please check all your endpoint types")
-
-  ExtractUrl (GET [] _) = TypeError (TL.Text "type GET require a type level list of supported formats as first type argument, got a list type instead. Please put a ' infront of [ so that it reads '[")
-  ExtractUrl (HEAD [] _) = TypeError (TL.Text "type HEAD require a type level list of supported formats as first type argument, got a list type instead. Please put a ' infront of [ so that it reads '[")
-  ExtractUrl (POST [] _) = TypeError (TL.Text "type HEAD require a type level list of supported formats as first type argument, got a list type instead. Please put a ' infront of [ so that it reads '[")
-  ExtractUrl (PUT [] _) = TypeError (TL.Text "type HEAD require a type level list of supported formats as first type argument, got a list type instead. Please put a ' infront of [ so that it reads '[")
-  ExtractUrl (DELETE [] _) = TypeError (TL.Text "type HEAD require a type level list of supported formats as first type argument, got a list type instead. Please put a ' infront of [ so that it reads '[")
-  ExtractUrl (CONNECT [] _) = TypeError (TL.Text "type HEAD require a type level list of supported formats as first type argument, got a list type instead. Please put a ' infront of [ so that it reads '[")
-  ExtractUrl (OPTIONS [] _) = TypeError (TL.Text "type HEAD require a type level list of supported formats as first type argument, got a list type instead. Please put a ' infront of [ so that it reads '[")
-  ExtractUrl (PATCH [] _) = TypeError (TL.Text "type HEAD require a type level list of supported formats as first type argument, got a list type instead. Please put a ' infront of [ so that it reads '[")
-  ExtractUrl (CUSTOM s [] _) = TypeError (TL.Text "type HEAD require a type level list of supported formats as first type argument, got a list type instead. Please put a ' infront of [ so that it reads '[")
-
+  ExtractUrl (GET a) = TypeError (EUMessage "GET")
+  ExtractUrl (HEAD a) = TypeError (EUMessage "POST")
+  ExtractUrl (POST a) = TypeError (EUMessage "HEAD")
+  ExtractUrl (PUT a) = TypeError (EUMessage "PUT")
+  ExtractUrl (DELETE a) = TypeError (EUMessage "DELETE")
+  ExtractUrl (CONNECT a) = TypeError (EUMessage "CONNECT")
+  ExtractUrl (OPTIONS a) = TypeError (EUMessage "OPTIONS")
+  ExtractUrl (PATCH a) = TypeError (EUMessage "PATCH")
+  ExtractUrl (CUSTOM s a) = TypeError (EUMessage "CUSTOM s")
   ExtractUrl (GET _ a) = '["GET"]
   ExtractUrl (HEAD _ a) = '["HEAD"]
   ExtractUrl (POST _ a) = '["POST"]
@@ -181,12 +173,12 @@ type family ExtractUrlList a :: [[Symbol]] where
 class RequestDerivable a where
   extract :: Request -> IO (Either Status a)
 
-lookupUrlParam :: (Read a) => [Text] -> Text -> Maybe (UrlParam s a)
+lookupUrlParam :: (FromByteString a) => [Text] -> Text -> Maybe (UrlParam s a)
 lookupUrlParam xs s = case elemIndex s xs of
-    Just i -> Just $ UrlParam $ read $ unpack $ xs !! (i+1)
+    Just i -> Just $ UrlParam $ fromByteString $ encodeUtf8 $ xs !! (i+1)
     Nothing -> Nothing
 
-instance (Read a, KnownSymbol s) => RequestDerivable (UrlParam s a) where
+instance (FromByteString a, KnownSymbol s) => RequestDerivable (UrlParam s a) where
   extract req = return $ case lookupUrlParam (pathInfo req) (pack $ symbolVal (Proxy :: Proxy s)) of
     Just x -> Right x
     Nothing -> Left $ status404
@@ -319,6 +311,9 @@ instance (ToEndpoints b e) => ToEndpoints (a -> b) e where
 instance (ToEndpoints a e, ToEndpoints b e) => ToEndpoints (a <|> b) e where
   toEndpoints e (Pair a b) = Pair (toEndpoints e a) (toEndpoints e b)
   toEndpoints e (HandlerPair a b) = Pair (toEndpoints e a) (toEndpoints e b)
+
+class FromByteString a where
+  fromByteString :: ByteString -> a
 
 serve
   :: forall a b c e m.
