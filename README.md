@@ -15,32 +15,4 @@ Right now, it can do the following.
 2. Can recieve parameters in url as well 'param/value' format.
 4. Can make the handlers run in a custom monad, while the default being in `IO`.
 
-### Getting started - The hello world app
-
-Here we are going to create a web app with just one endpoint. 
-
-###
-```
-  module Main where
-  
-  import Yaar
-  import Data.Proxy
-  import Network.Wai.Handler.Warp (run)
-  
-  type Server =  "hello" :> "world" :> (Get '[PlainText] String)
-  
-  indexHandler :: IO String
-  indexHandler = return "Hello World"
-  
-  app = serve (Proxy :: Proxy Server) indexHandler ()
-  main = run 4000 app
-```
-
-Since our app only have a single endpoint, the type of the whole server is the same as the type of the endpoint.
-
-Then we are defining a Haskell function that will handle this endpoint. By default Yaar handlers run in IO.
-Since our endpoint returns `(Get ['PlainText] String)`, we need a function of type `IO String` to handle this
-endpoint.
-
-After that, we create the `serve` function from Yaar to create a Wai Application and in the very next line we
-run that Application using `run` function from Wai library.
+Please see the `test/Spec.hs` file in this repo to see a sample app.
