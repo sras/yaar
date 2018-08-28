@@ -15,7 +15,7 @@ import Network.Wai (defaultRequest)
 import Network.Wai.Test
 import Control.Exception
 import Control.DeepSeq (force)
-import Data.Text (Text, pack)
+import Data.Text (Text, pack, unpack)
 import Data.Proxy
 import GHC.Generics
 import Data.Text.Encoding (encodeUtf8)
@@ -29,6 +29,7 @@ type TestServer =  "home" :> "profile" :> "bio" :> (GET '[PlainText, HTML] Strin
                <|> "home" :> "profile" :> "resume" :> "add" :> ReqBody JSON Resume :> (POST '[JSON] Resume)
                <|> "home" :> "post" :> UrlParam "id" Int :> (GET PlainText String)
                <|> "request" :> "with" :> "header" :> UrlParam "id" Int :> (GET PlainText (ResponseHeader ["custom-header-1", "custom-header-2"] String))
+               <|> "request" :> "with" :> "input" :> "header" :> RequestHeader "input-header":> GET '[PlainText] String
 
 data Resume = Resume { name :: Text } deriving (Generic, Show)
 
@@ -47,6 +48,7 @@ server =  handlerBio
       <|> handlerAddResume
       <|> handlerPost
       <|> handlerWithHeader
+      <|> handlerHeaderInput
 
 handlerBio :: IO String
 handlerBio = return $ "Index"
@@ -62,6 +64,9 @@ handlerAddResume r = return $ r
 
 handlerPost :: Int -> IO String
 handlerPost postId = return $ "Post " ++ (show postId)
+
+handlerHeaderInput :: Text -> IO String
+handlerHeaderInput headerInput = return $ "Header value = " ++ (unpack headerInput)
 
 handlerWithHeader :: Int -> IO (ResponseHeader '["custom-header-1", "custom-header-2"] String)
 handlerWithHeader id = return $
@@ -141,6 +146,16 @@ main = hspec $ do
           return r
       response <- runSession session app
       simpleBody response `shouldBe` "{\"name\":\"John Doe\"}"
+      (statusCode.simpleStatus) response `shouldBe` 200
+    it "should respond back with input in header item" $ do
+      let 
+        session = do
+          let req = (setPath (defaultRequest { requestHeaders = [("input-header", "Test input String")] }) "/request/with/input/header")
+          r <- request $ req
+          assertContentType "text/plain" $ r
+          return r
+      response <- runSession session app
+      simpleBody response `shouldBe` "Header value = Test input String"
       (statusCode.simpleStatus) response `shouldBe` 200
   describe "routing" $ do
     it "should match when there is a param route but no exact match" $

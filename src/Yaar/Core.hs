@@ -136,10 +136,30 @@ type family ExtractHandler (a :: *)  where
   ExtractHandler (a :> b) = (UrlToRequestDerivable a) -> (ExtractHandler b)
   ExtractHandler (b s a) = (ResponseFormat s (Endpoint a))
 
-type family ExtractUrl a :: [Symbol] where
+type family ExtractUrl (a :: k) :: [Symbol] where
   ExtractUrl ((UrlParam s a) :> b) = s : "::param::": ExtractUrl b
   ExtractUrl ((a :: Symbol) :> b) = a : ExtractUrl b
   ExtractUrl (a :> b) = ExtractUrl b
+  ExtractUrl (GET a) = TypeError (TL.Text "type GET require a format type and a value type. Please check all your endpoint types")
+  ExtractUrl (HEAD a) = TypeError (TL.Text "type HEAD require a format type and a value type. Please check all your endpoint types")
+  ExtractUrl (POST a) = TypeError (TL.Text "type POST require a format type and a value type. Please check all your endpoint types")
+  ExtractUrl (PUT a) = TypeError (TL.Text "type PUT require a format type and a value type. Please check all your endpoint types")
+  ExtractUrl (DELETE a) = TypeError (TL.Text "type DELETE require a format type and a value type. Please check all your endpoint types")
+  ExtractUrl (CONNECT a) = TypeError (TL.Text "type CONNECT require a format type and a value type. Please check all your endpoint types")
+  ExtractUrl (OPTIONS a) = TypeError (TL.Text "type OPTIONS require a format type and a value type. Please check all your endpoint types")
+  ExtractUrl (PATCH a) = TypeError (TL.Text "type PATCH require a format type and a value type. Please check all your endpoint types")
+  ExtractUrl (CUSTOM s a) = TypeError (TL.Text "type CUSTOM require a format type and a value type. Please check all your endpoint types")
+
+  ExtractUrl (GET [] _) = TypeError (TL.Text "type GET require a type level list of supported formats as first type argument, got a list type instead. Please put a ' infront of [ so that it reads '[")
+  ExtractUrl (HEAD [] _) = TypeError (TL.Text "type HEAD require a type level list of supported formats as first type argument, got a list type instead. Please put a ' infront of [ so that it reads '[")
+  ExtractUrl (POST [] _) = TypeError (TL.Text "type HEAD require a type level list of supported formats as first type argument, got a list type instead. Please put a ' infront of [ so that it reads '[")
+  ExtractUrl (PUT [] _) = TypeError (TL.Text "type HEAD require a type level list of supported formats as first type argument, got a list type instead. Please put a ' infront of [ so that it reads '[")
+  ExtractUrl (DELETE [] _) = TypeError (TL.Text "type HEAD require a type level list of supported formats as first type argument, got a list type instead. Please put a ' infront of [ so that it reads '[")
+  ExtractUrl (CONNECT [] _) = TypeError (TL.Text "type HEAD require a type level list of supported formats as first type argument, got a list type instead. Please put a ' infront of [ so that it reads '[")
+  ExtractUrl (OPTIONS [] _) = TypeError (TL.Text "type HEAD require a type level list of supported formats as first type argument, got a list type instead. Please put a ' infront of [ so that it reads '[")
+  ExtractUrl (PATCH [] _) = TypeError (TL.Text "type HEAD require a type level list of supported formats as first type argument, got a list type instead. Please put a ' infront of [ so that it reads '[")
+  ExtractUrl (CUSTOM s [] _) = TypeError (TL.Text "type HEAD require a type level list of supported formats as first type argument, got a list type instead. Please put a ' infront of [ so that it reads '[")
+
   ExtractUrl (GET _ a) = '["GET"]
   ExtractUrl (HEAD _ a) = '["HEAD"]
   ExtractUrl (POST _ a) = '["POST"]

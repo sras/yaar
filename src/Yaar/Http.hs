@@ -39,6 +39,7 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as LB
 import Data.String
 import Data.Proxy
+import Debug.Trace
 
 data OctetStream
 
@@ -75,21 +76,20 @@ instance (ToJSON a) => Encodable JSON a where
   encode v _ =  LB.toStrict $ Data.Aeson.encode $ toJSON v
 
 -- to implement input via header
+data RequestHeader (s :: Symbol) = RequestHeader Text
 
-data RequestHeader (s :: Symbol) a = RequestHeader a
+type instance UrlToRequestDerivable (RequestHeader s) = RequestHeader s
 
-type instance UrlToRequestDerivable (RequestHeader s a) = RequestHeader s a
-
-instance (Read a, KnownSymbol s) => RequestDerivable (RequestHeader s a) where
+instance (KnownSymbol s) => RequestDerivable (RequestHeader s) where
   extract request = return $ extractHeaderValue (requestHeaders request) (symbolVal (Proxy :: Proxy s))
     where
-      extractHeaderValue :: (Read a) => [Header] -> String -> Either Status (RequestHeader s a)
+      extractHeaderValue :: [Header] -> String -> Either Status (RequestHeader s)
       extractHeaderValue headers headerName =
         case lookup (fromString headerName) headers of
-          Just x -> Right $ RequestHeader $ read $ unpack $ decodeUtf8 $ x
+          Just x -> Right $ RequestHeader $ decodeUtf8 $ x
           Nothing -> Left $ status400
 
-instance Convertable (RequestHeader s a) a where
+instance Convertable (RequestHeader s) Text where
   convert (RequestHeader a) = a
 
 -- to implement support for query parameters
