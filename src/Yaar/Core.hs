@@ -18,7 +18,7 @@
 module Yaar.Core 
   ( (:>)
   , (<|>)
-  , Endpoint(..)
+  , Endpoint
   , ToEndpoint(..)
   , type (<|>)
   , UrlParam
@@ -46,26 +46,22 @@ where
 import GHC.TypeLits as TL
 import Data.Proxy
 import Data.List
-import Data.Maybe
 
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy (fromStrict)
-import Data.Text (pack, unpack, Text)
-import Data.Text.Encoding (encodeUtf8, decodeUtf8)
+import Data.Text (pack, Text)
+import Data.Text.Encoding (encodeUtf8)
 
 import Network.Wai
   ( Application
   , responseLBS
   , Request
   , Response
-  , ResponseReceived
-  , requestMethod
   , requestHeaders
   , pathInfo
   )
-import Network.HTTP.Types (Status, StdMethod, HeaderName, hAccept, hContentType)
-import Network.HTTP.Types.Method
-import Network.HTTP.Types.Status (status200, status400, status415, status404)
+import Network.HTTP.Types (Status, HeaderName, hAccept, hContentType)
+import Network.HTTP.Types.Status (status200, status415, status404)
 import Yaar.Routing
 
 -- some boiler plate to convert type level lists to value level list
@@ -112,21 +108,21 @@ type Endpoint = IO
 type family IsEqual a b where
   IsEqual a a = a
   IsEqual a b = TypeError
-    ( TL.Text "Endpoint handlers should be all of one type, but found at leaset two of them, '"
-      :<>: TL.ShowType a
-      :<>: (TL.Text "'")
-      :<>: (TL.Text " and '")
-      :<>: TL.ShowType b
-      :<>: (TL.Text "'"))
+    ( 'TL.Text "Endpoint handlers should be all of one type, but found at leaset two of them, '"
+      ':<>: 'TL.ShowType a
+      ':<>: ('TL.Text "'")
+      ':<>: ('TL.Text " and '")
+      ':<>: ('TL.ShowType b)
+      ':<>: ('TL.Text "'"))
 
 type family ExtractType a :: * -> * where
   ExtractType (a <|> b) = IsEqual (ExtractType a) (ExtractType b)
   ExtractType (a -> b) = ExtractType b
   ExtractType (m a) = m
   ExtractType b = TypeError
-    (TL.Text "Endpoint handlers should return a parametrized type of form 'm a', but found '"
-     :<>: TL.ShowType b
-     :<>: (TL.Text "'"))
+    ('TL.Text "Endpoint handlers should return a parametrized type of form 'm a', but found '"
+     ':<>: ('TL.ShowType b)
+     ':<>: ('TL.Text "'"))
 
 type family UrlToRequestDerivable a
 
@@ -137,7 +133,7 @@ type family ExtractHandler (a :: *)  where
   ExtractHandler (a :> b) = (UrlToRequestDerivable a) -> (ExtractHandler b)
   ExtractHandler (b s a) = (ResponseFormat s (Endpoint a))
 
-type EUMessage (a :: Symbol) = (TL.Text "type ") :<>: (TL.Text a) :<>: (TL.Text " require a format type and a value type. Please check all your endpoint types")
+type EUMessage (a :: Symbol) = ('TL.Text "type ") ':<>: ('TL.Text a) ':<>: ('TL.Text " require a format type and a value type. Please check all your endpoint types")
 
 type family ExtractUrl (a :: k) :: [Symbol] where
   ExtractUrl ((UrlParam s a) :> b) = s : "::param::": ExtractUrl b
@@ -194,7 +190,7 @@ instance (Handler b, RequestDerivable a) => Handler (a -> b) where
       Left s -> return $ responseLBS s [] ""
 
 instance {-# OVERLAPPABLE #-} (ToResponse format a) => Handler (ResponseFormat format (Endpoint a)) where
-  execute r (ResponseFormat a) = do
+  execute _ (ResponseFormat a) = do
     v <- a
     return $ toResponse v (Proxy :: Proxy format)
 
@@ -209,10 +205,10 @@ instance (ToResponse format a, ContentType format, Handler (ResponseFormat forma
           Just x ->  doesMatch (Proxy :: Proxy format) x
           Nothing -> True
       lookupHeader :: Request -> HeaderName -> Maybe ByteString
-      lookupHeader r h = lookup h $ requestHeaders r
+      lookupHeader r_ h = lookup h $ requestHeaders r_
 
 instance {-# OVERLAPPABLE #-} Handler (ResponseFormat '[] (Endpoint a)) where
-  execute r _ = return $ responseLBS status415 [] "Unsupported media type"
+  execute _ _ = return $ responseLBS status415 [] "Unsupported media type"
 
 instance Convertable (Endpoint a) (ResponseFormat format (Endpoint a)) where
   convert a = ResponseFormat $ a
@@ -226,6 +222,7 @@ class ToHandlerStack a where
 
 instance {-# OVERLAPPING #-} (ToHandlerStack b) => ToHandlerStack (a <|> b) where
   toHandlerStack (HandlerPair a b) = AddToStack a (toHandlerStack b)
+  toHandlerStack (Pair _ _) = error "Unexpected use of Constructor 'Pair'"
 
 instance (Handler a) => ToHandlerStack a where
   toHandlerStack a = AddToStack a EmptyStack
@@ -264,6 +261,7 @@ instance Convertable (UrlParam s a) a where
 
 instance (Convertable a c, Handler c, Convertable b d) => Convertable (a <|> b) (c <|> d) where
   convert (Pair a b) = HandlerPair (convert a) (convert b)
+  convert (HandlerPair _ _) = error "Unexpected use of Constructor 'HandlerPair'"
 
 instance {-# OVERLAPPABLE #-} (Encodable format a, ContentType format) => ToResponse format a where
   toResponse a p =
@@ -316,23 +314,22 @@ class FromByteString a where
   fromByteString :: ByteString -> a
 
 serve
-  :: forall a b c e m.
+  :: forall a b e.
   ( ManySymbolLists (ExtractUrlList a)
   , ToHandlerStack (ToHandlers a)
-  , ExtractType b ~ m
   , ToEndpoints b e
-  , ToEndpoint m Endpoint e
   , Convertable (ChangeEndpoint b) (ToHandlers a))
   => Proxy a
   -> b
   -> e
   -> Application
-serve p h env = application $ makeRoutes $ (toSymbolLists $ (Proxy :: Proxy (ExtractUrlList a))) 
+serve _ h env = application $ makeRoutes $ (toSymbolLists $ (Proxy :: Proxy (ExtractUrlList a))) 
   where
     application !routes r respond =
       case lookupRequest r routes of
         Just n -> processRequest r (toHandlerStack $ (convert (toEndpoints env h) :: (ToHandlers a))) n >>= respond
         Nothing -> respond $ responseLBS status404 [] $ "Path does not exist."
     processRequest :: Request -> HandlerStack -> Int -> IO Response
-    processRequest r (AddToStack h _) 0 = execute r h
-    processRequest r (AddToStack h b) c = processRequest r b (c-1)
+    processRequest r (AddToStack h_ _) 0 = execute r h_
+    processRequest r (AddToStack _ b) c = processRequest r b (c-1)
+    processRequest _ EmptyStack _ = error "Empty stack cannot be added to a non empty stack"

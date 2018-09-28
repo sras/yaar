@@ -7,6 +7,7 @@
 {-# Language PolyKinds #-}
 {-# Language TypeOperators #-}
 {-# Language ScopedTypeVariables #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Yaar.Http
   ( HTML
@@ -23,7 +24,7 @@ where
 
 import Yaar.Core
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
-import Data.Text (pack, unpack, Text)
+import Data.Text (pack, Text)
 import Data.Aeson
 import Network.Wai
   ( requestBody
@@ -39,7 +40,6 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as LB
 import Data.String
 import Data.Proxy
-import Debug.Trace
 
 data OctetStream
 
@@ -49,7 +49,7 @@ instance ContentType NoContent where
   getContentType _ = Nothing
 
 instance Handler (ResponseFormat '[] (Endpoint NoContent)) where
-  execute r (ResponseFormat h) = do
+  execute _ (ResponseFormat h) = do
     _ <- h
     return $ responseLBS status200 [] ""
 
@@ -65,7 +65,7 @@ instance (FromJSON a) => RequestDerivable (ReqBody JSON a) where
     body <- requestBody req
     return $ case eitherDecodeStrict body of
       Right a -> Right $ ReqBody a
-      Left a -> Left $ status400
+      Left _ -> Left $ status400
 
 instance Convertable (ReqBody s a) a where
   convert (ReqBody a) = a
@@ -85,7 +85,7 @@ type instance UrlToRequestDerivable (RequestHeader s a) = RequestHeader s a
 instance (FromByteString a, KnownSymbol s) => RequestDerivable (RequestHeader s a) where
   extract request = return $ extractHeaderValue (requestHeaders request) (symbolVal (Proxy :: Proxy s))
     where
-      extractHeaderValue :: (FromByteString a) => [Header] -> String -> Either Status (RequestHeader s a)
+      extractHeaderValue :: [Header] -> String -> Either Status (RequestHeader s a)
       extractHeaderValue headers headerName =
         case lookup (fromString headerName) headers of
           Just x -> Right $ RequestHeader $ fromByteString $ x
@@ -125,13 +125,13 @@ class HeaderAttachable a where
   addHeader :: (KnownSymbol s1) => (Proxy s1) -> Text -> a -> ResponseHeader (s1:AHParent a) (WrappedInHeader a)
 
 instance  {-# OVERLAPPABLE #-} (AHParent a ~ '[], WrappedInHeader a ~ a) => HeaderAttachable a where
-  addHeader (p :: Proxy s) v a =
+  addHeader (_ :: Proxy s) v a =
     let
       headerName = symbolVal (Proxy :: Proxy s)
       in (ResponseHeader [(fromString headerName, encodeUtf8 v)]  a) :: ResponseHeader (s:'[]) a
 
 instance HeaderAttachable (ResponseHeader s2 a) where
-  addHeader (p :: Proxy s1) v (ResponseHeader s a) =
+  addHeader (_ :: Proxy s1) v (ResponseHeader s a) =
     let
       headerName = symbolVal (Proxy :: Proxy s1)
     in (ResponseHeader ((fromString headerName, encodeUtf8 v):s) a) :: ResponseHeader (s1:s2) a
