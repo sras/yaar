@@ -11,7 +11,7 @@ import Test.Hspec
 import Network.HTTP.Types (hAccept)
 import Network.HTTP.Types.Status (statusCode)
 import Network.Wai.Internal
-import Network.Wai (defaultRequest)
+import Network.Wai (Application, defaultRequest)
 import Network.Wai.Test
 import Control.Exception
 import Control.DeepSeq (force)
@@ -83,10 +83,34 @@ handlerWithHeader id = return $
 api :: Proxy TestServer
 api = Proxy
 
+app :: Application
 app = serve api server ()
+
+type TestServer2 =  "home" :> "profile" :> "bio" :> (GET '[PlainText, HTML] String)
+
+server2 =  handlerBio2
+
+api2 :: Proxy TestServer2
+api2 = Proxy
+
+handlerBio2 :: Maybe String -- A handler that runs in the Maybe
+handlerBio2 = return $ "Index"
+
+instance ToEndpoint Maybe IO () where -- This instance enables the handler to run in Maybe
+  toEndpoint _ (Just a)  = return a
+  toEndpoint _ Nothing = error "No result for this endpoint"
+
+anotherMonadApp :: Application
+anotherMonadApp = serve api2 server2 ()
 
 main :: IO ()
 main = hspec $ do
+  describe "basic-behavior-in-another-monad" $ do
+    it "should generate the right response - 1" $ do
+      let session = request (setPath defaultRequest "/home/profile/bio")
+      response <- runSession session anotherMonadApp
+      simpleBody response `shouldBe` "Index"
+      (statusCode.simpleStatus) response `shouldBe` 200
   describe "basic-behavior" $ do
     it "should generate the right response - 1" $ do
       let session = request (setPath defaultRequest "/home/profile/bio")
