@@ -14,6 +14,7 @@
 {-# Language FunctionalDependencies #-}
 {-# Language OverloadedStrings #-}
 {-# Language BangPatterns #-}
+{-# OPTIONS_GHC -fno-warn-redundant-constraints #-} -- for a possible ghc bug that throws this warning for 'ExtractType b ~ m' constraint in serve function
 
 module Yaar.Core 
   ( (:>)
@@ -201,9 +202,7 @@ instance (ToResponse format a, ContentType format, Handler (ResponseFormat forma
     where
       doesRequestMatchContentType :: Request -> Bool
       doesRequestMatchContentType request =
-        case lookupHeader request hAccept of
-          Just x ->  doesMatch (Proxy :: Proxy format) x
-          Nothing -> True
+        doesMatch (Proxy :: Proxy format) $ lookupHeader request hAccept
       lookupHeader :: Request -> HeaderName -> Maybe ByteString
       lookupHeader r_ h = lookup h $ requestHeaders r_
 
@@ -238,11 +237,14 @@ class Convertable a b where
 
 class ContentType a where
   getContentType :: Proxy a -> Maybe ByteString
-  doesMatch :: Proxy a -> ByteString -> Bool
+  doesMatch :: Proxy a -> (Maybe ByteString) -> Bool
   doesMatch p v =
     case getContentType p of
-      Just x -> x == v
-      Nothing -> True
+      Just x ->
+        case v of
+          Just b -> x == b
+          Nothing -> False
+      Nothing -> False
 
 instance {-# OVERLAPPABLE #-} Convertable a a where
   convert = id
@@ -314,10 +316,12 @@ class FromByteString a where
   fromByteString :: ByteString -> a
 
 serve
-  :: forall a b e.
+  :: forall a b e m.
   ( ManySymbolLists (ExtractUrlList a)
   , ToHandlerStack (ToHandlers a)
+  , ExtractType b ~ m
   , ToEndpoints b e
+  , ToEndpoint m Endpoint e
   , Convertable (ChangeEndpoint b) (ToHandlers a))
   => Proxy a
   -> b
@@ -331,5 +335,5 @@ serve _ h env = application $ makeRoutes $ (toSymbolLists $ (Proxy :: Proxy (Ext
         Nothing -> respond $ responseLBS status404 [] $ "Path does not exist."
     processRequest :: Request -> HandlerStack -> Int -> IO Response
     processRequest r (AddToStack h_ _) 0 = execute r h_
-    processRequest r (AddToStack _ b) c = processRequest r b (c-1)
-    processRequest _ EmptyStack _ = error "Empty stack cannot be added to a non empty stack"
+    processRequest r (AddToStack __ b) c = processRequest r b (c-1)
+    processRequest _ EmptyStack _ = error "Cannot add empty stack on a non empty stack"

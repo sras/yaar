@@ -123,6 +123,15 @@ main = hspec $ do
       response <- runSession session app
       simpleBody response `shouldBe` "{\"name\":\"Jane Doe\"}"
       (statusCode.simpleStatus) response `shouldBe` 200
+    it "should generate the html response for wildcard content type" $ do
+      let 
+        session = do
+          r <- request (setPath (defaultRequest { requestHeaders = [(hAccept, "*/*")] }) "/home/profile/bio")
+          assertContentType "text/plain" r
+          return r
+      response <- runSession session app
+      simpleBody response `shouldBe` "Index"
+      (statusCode.simpleStatus) response `shouldBe` 200
     it "should pass the param from url to handler" $ do
       let 
         session = do
@@ -146,7 +155,7 @@ main = hspec $ do
     it "should respond back with posted item" $ do
       let 
         session = do
-          let request = (setPath (defaultRequest { requestMethod = "POST"}) "/home/profile/resume/add")
+          let request = (setPath (defaultRequest { requestHeaders = [(hAccept, "application/json")],  requestMethod = "POST"}) "/home/profile/resume/add")
           r <- srequest $ SRequest request $ Data.Aeson.encode $ Resume "John Doe"
           assertContentType "application/json" $ r
           return r
