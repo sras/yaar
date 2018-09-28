@@ -41,6 +41,7 @@ module Yaar.Core
   , Handler(..)
   , ResponseFormat(..)
   , FromByteString(..)
+  , Server
   ) 
 where
 
@@ -133,6 +134,13 @@ type family ExtractHandler (a :: *)  where
   ExtractHandler ((a :: Symbol) :> b) = (ExtractHandler b)
   ExtractHandler (a :> b) = (UrlToRequestDerivable a) -> (ExtractHandler b)
   ExtractHandler (b s a) = (ResponseFormat s (Endpoint a))
+
+type family StripResponseFormat a where
+  StripResponseFormat (ResponseFormat s a) = a
+  StripResponseFormat (a -> b) = (StripResponseFormat b)
+  StripResponseFormat (a <|> b) = (StripResponseFormat b) <|> (StripResponseFormat b)
+
+type Server a = StripResponseFormat (ToHandlers a)
 
 type EUMessage (a :: Symbol) = ('TL.Text "type ") ':<>: ('TL.Text a) ':<>: ('TL.Text " require a format type and a value type. Please check all your endpoint types")
 
