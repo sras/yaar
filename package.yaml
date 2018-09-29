@@ -1,6 +1,5 @@
 name:                yaar
 version:             0.1.0.0
-bitbucket:              "sras/yaar"
 license:             BSD3
 author:              "Sandeep.C.R"
 maintainer:          "sandeepcr2@gmail.com"
@@ -36,6 +35,11 @@ tests:
   yaar-test:
     main:                Spec.hs
     source-dirs:         test, src
+    other-modules:
+      Yaar
+      Yaar.Core
+      Yaar.Http
+      Yaar.Routing
     dependencies:
     - wai
     - wai-extra

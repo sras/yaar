@@ -96,9 +96,9 @@ api2 = Proxy
 handlerBio2 :: Maybe String -- A handler that runs in the Maybe
 handlerBio2 = return $ "Index"
 
-instance ToEndpoint Maybe IO () where -- This instance enables the handler to run in Maybe
-  toEndpoint _ (Just a)  = return a
-  toEndpoint _ Nothing = error "No result for this endpoint"
+instance RunnableTo Maybe IO () where -- This instance enables the handler to run in Maybe
+  runTo _ (Just a)  = return a
+  runTo _ Nothing = error "No result for this endpoint"
 
 anotherMonadApp :: Application
 anotherMonadApp = serve api2 server2 ()

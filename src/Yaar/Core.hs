@@ -20,7 +20,7 @@ module Yaar.Core
   ( (:>)
   , (<|>)
   , YaarHandler
-  , HCastable(..)
+  , RunnableTo(..)
   , type (<|>)
   , UrlParam
   , GET
@@ -301,24 +301,24 @@ type family ChangeEndpoint a where
   ChangeEndpoint (YaarHandler a) = YaarHandler a
   ChangeEndpoint (m a) = YaarHandler a
 
-class HCastable m1 m2 e where
-  hCast :: e -> m1 a -> m2 a
+class RunnableTo m1 m2 e where
+  runTo :: e -> m1 a -> m2 a
 
-instance HCastable YaarHandler YaarHandler () where
-  hCast _ = id
+instance RunnableTo YaarHandler YaarHandler () where
+  runTo _ = id
 
 class ToYaarHandlers a e where
-  hCasts :: e -> a -> ChangeEndpoint a
+  runTos :: e -> a -> ChangeEndpoint a
 
-instance {-# OVERLAPPABLE #-} (HCastable m1 YaarHandler e, ChangeEndpoint (m1 a) ~ YaarHandler a) => ToYaarHandlers (m1 a) e where
-  hCasts e a = hCast e a
+instance {-# OVERLAPPABLE #-} (RunnableTo m1 YaarHandler e, ChangeEndpoint (m1 a) ~ YaarHandler a) => ToYaarHandlers (m1 a) e where
+  runTos e a = runTo e a
 
 instance (ToYaarHandlers b e) => ToYaarHandlers (a -> b) e where
-  hCasts e fn = \x -> hCasts e (fn x)
+  runTos e fn = \x -> runTos e (fn x)
 
 instance (ToYaarHandlers a e, ToYaarHandlers b e) => ToYaarHandlers (a <|> b) e where
-  hCasts e (Pair a b) = Pair (hCasts e a) (hCasts e b)
-  hCasts e (HandlerPair a b) = Pair (hCasts e a) (hCasts e b)
+  runTos e (Pair a b) = Pair (runTos e a) (runTos e b)
+  runTos e (HandlerPair a b) = Pair (runTos e a) (runTos e b)
 
 class FromByteString a where
   fromByteString :: ByteString -> a
@@ -329,7 +329,7 @@ serve
   , ToHandlerStack (ToHandlers YaarHandler a)
   , ExtractType b ~ m
   , ToYaarHandlers b e
-  , HCastable m YaarHandler e
+  , RunnableTo m YaarHandler e
   , Convertable (ChangeEndpoint b) (ToHandlers YaarHandler a))
   => Proxy a
   -> b
@@ -339,7 +339,7 @@ serve _ h env = application $ makeRoutes $ (toSymbolLists $ (Proxy :: Proxy (Ext
   where
     application !routes r respond =
       case lookupRequest r routes of
-        Just n -> processRequest r (toHandlerStack $ (convert (hCasts env h) :: (ToHandlers YaarHandler a))) n >>= respond
+        Just n -> processRequest r (toHandlerStack $ (convert (runTos env h) :: (ToHandlers YaarHandler a))) n >>= respond
         Nothing -> respond $ responseLBS status404 [] $ "Path does not exist."
     processRequest :: Request -> HandlerStack -> Int -> IO Response
     processRequest r (AddToStack h_ _) 0 = execute r h_
