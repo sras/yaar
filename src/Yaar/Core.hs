@@ -130,17 +130,17 @@ type family UrlToRequestDerivable a
 
 type instance UrlToRequestDerivable  (UrlParam s a) = (UrlParam s a)
 
-type family ExtractHandler (a :: *)  where
-  ExtractHandler ((a :: Symbol) :> b) = (ExtractHandler b)
-  ExtractHandler (a :> b) = (UrlToRequestDerivable a) -> (ExtractHandler b)
-  ExtractHandler (b s a) = (ResponseFormat s (Endpoint a))
+type family ExtractHandler (m :: * -> *) (a :: *)  where
+  ExtractHandler m ((a :: Symbol) :> b) = (ExtractHandler m b)
+  ExtractHandler m (a :> b) = (UrlToRequestDerivable a) -> (ExtractHandler m b)
+  ExtractHandler m (b s a) = (ResponseFormat s (m a))
 
 type family StripResponseFormat a where
   StripResponseFormat (ResponseFormat s a) = a
   StripResponseFormat (a -> b) = (StripResponseFormat b)
   StripResponseFormat (a <|> b) = (StripResponseFormat b) <|> (StripResponseFormat b)
 
-type Server a = StripResponseFormat (ToHandlers a)
+type Server a m = StripResponseFormat (ToHandlers m a)
 
 type EUMessage (a :: Symbol) = ('TL.Text "type ") ':<>: ('TL.Text a) ':<>: ('TL.Text " require a format type and a value type. Please check all your endpoint types")
 
@@ -288,9 +288,9 @@ infixr 8 <|>
 type family RightServer a :: * where
   RightServer (a <|> b) = b
 
-type family ToHandlers a where
-  ToHandlers (a <|> b) = (ExtractHandler a) <|> (ToHandlers b)
-  ToHandlers a = (ExtractHandler a)
+type family ToHandlers (m :: * -> *) a where
+  ToHandlers m (a <|> b) = (ExtractHandler m a) <|> (ToHandlers m b)
+  ToHandlers m a = (ExtractHandler m a)
 
 (<|>) :: a -> b -> (a <|> b)
 (<|>) a b = Pair a b
@@ -326,11 +326,11 @@ class FromByteString a where
 serve
   :: forall a b e m.
   ( ManySymbolLists (ExtractUrlList a)
-  , ToHandlerStack (ToHandlers a)
+  , ToHandlerStack (ToHandlers Endpoint a)
   , ExtractType b ~ m
   , ToEndpoints b e
   , ToEndpoint m Endpoint e
-  , Convertable (ChangeEndpoint b) (ToHandlers a))
+  , Convertable (ChangeEndpoint b) (ToHandlers Endpoint a))
   => Proxy a
   -> b
   -> e
@@ -339,7 +339,7 @@ serve _ h env = application $ makeRoutes $ (toSymbolLists $ (Proxy :: Proxy (Ext
   where
     application !routes r respond =
       case lookupRequest r routes of
-        Just n -> processRequest r (toHandlerStack $ (convert (toEndpoints env h) :: (ToHandlers a))) n >>= respond
+        Just n -> processRequest r (toHandlerStack $ (convert (toEndpoints env h) :: (ToHandlers Endpoint a))) n >>= respond
         Nothing -> respond $ responseLBS status404 [] $ "Path does not exist."
     processRequest :: Request -> HandlerStack -> Int -> IO Response
     processRequest r (AddToStack h_ _) 0 = execute r h_
