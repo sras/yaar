@@ -19,8 +19,8 @@
 module Yaar.Core 
   ( (:>)
   , (<|>)
-  , Endpoint
-  , ToEndpoint(..)
+  , YaarHandler
+  , HCastable(..)
   , type (<|>)
   , UrlParam
   , GET
@@ -105,7 +105,7 @@ data a :> b
 
 infixr 9 :>
 
-type Endpoint = IO
+type YaarHandler = IO
 
 type family IsEqual a b where
   IsEqual a a = a
@@ -198,15 +198,15 @@ instance (Handler b, RequestDerivable a) => Handler (a -> b) where
       Right x -> execute r (fn x)
       Left s -> return $ responseLBS s [] ""
 
-instance {-# OVERLAPPABLE #-} (ToResponse format a) => Handler (ResponseFormat format (Endpoint a)) where
+instance {-# OVERLAPPABLE #-} (ToResponse format a) => Handler (ResponseFormat format (YaarHandler a)) where
   execute _ (ResponseFormat a) = do
     v <- a
     return $ toResponse v (Proxy :: Proxy format)
 
-instance (ToResponse format a, ContentType format, Handler (ResponseFormat formats (Endpoint a))) => Handler (ResponseFormat (format:formats) (Endpoint a)) where
+instance (ToResponse format a, ContentType format, Handler (ResponseFormat formats (YaarHandler a))) => Handler (ResponseFormat (format:formats) (YaarHandler a)) where
   execute r (ResponseFormat a) = if doesRequestMatchContentType r
-    then execute r (ResponseFormat a :: ResponseFormat format (Endpoint a))
-    else execute r (ResponseFormat a :: ResponseFormat formats (Endpoint a))
+    then execute r (ResponseFormat a :: ResponseFormat format (YaarHandler a))
+    else execute r (ResponseFormat a :: ResponseFormat formats (YaarHandler a))
     where
       doesRequestMatchContentType :: Request -> Bool
       doesRequestMatchContentType request =
@@ -214,10 +214,10 @@ instance (ToResponse format a, ContentType format, Handler (ResponseFormat forma
       lookupHeader :: Request -> HeaderName -> Maybe ByteString
       lookupHeader r_ h = lookup h $ requestHeaders r_
 
-instance {-# OVERLAPPABLE #-} Handler (ResponseFormat '[] (Endpoint a)) where
+instance {-# OVERLAPPABLE #-} Handler (ResponseFormat '[] (YaarHandler a)) where
   execute _ _ = return $ responseLBS status415 [] "Unsupported media type"
 
-instance Convertable (Endpoint a) (ResponseFormat format (Endpoint a)) where
+instance Convertable (YaarHandler a) (ResponseFormat format (YaarHandler a)) where
   convert a = ResponseFormat $ a
 
 data HandlerStack where
@@ -298,27 +298,27 @@ type family ToHandlers (m :: * -> *) a where
 type family ChangeEndpoint a where
   ChangeEndpoint (a <|> b) = (ChangeEndpoint a) <|> (ChangeEndpoint b)
   ChangeEndpoint (a -> b) = (a -> ChangeEndpoint b)
-  ChangeEndpoint (Endpoint a) = Endpoint a
-  ChangeEndpoint (m a) = Endpoint a
+  ChangeEndpoint (YaarHandler a) = YaarHandler a
+  ChangeEndpoint (m a) = YaarHandler a
 
-class ToEndpoint m1 m2 e where
-  toEndpoint :: e -> m1 a -> m2 a
+class HCastable m1 m2 e where
+  hCast :: e -> m1 a -> m2 a
 
-instance ToEndpoint Endpoint Endpoint () where
-  toEndpoint _ = id
+instance HCastable YaarHandler YaarHandler () where
+  hCast _ = id
 
-class ToEndpoints a e where
-  toEndpoints :: e -> a -> ChangeEndpoint a
+class ToYaarHandlers a e where
+  hCasts :: e -> a -> ChangeEndpoint a
 
-instance {-# OVERLAPPABLE #-} (ToEndpoint m1 Endpoint e, ChangeEndpoint (m1 a) ~ Endpoint a) => ToEndpoints (m1 a) e where
-  toEndpoints e a = toEndpoint e a
+instance {-# OVERLAPPABLE #-} (HCastable m1 YaarHandler e, ChangeEndpoint (m1 a) ~ YaarHandler a) => ToYaarHandlers (m1 a) e where
+  hCasts e a = hCast e a
 
-instance (ToEndpoints b e) => ToEndpoints (a -> b) e where
-  toEndpoints e fn = \x -> toEndpoints e (fn x)
+instance (ToYaarHandlers b e) => ToYaarHandlers (a -> b) e where
+  hCasts e fn = \x -> hCasts e (fn x)
 
-instance (ToEndpoints a e, ToEndpoints b e) => ToEndpoints (a <|> b) e where
-  toEndpoints e (Pair a b) = Pair (toEndpoints e a) (toEndpoints e b)
-  toEndpoints e (HandlerPair a b) = Pair (toEndpoints e a) (toEndpoints e b)
+instance (ToYaarHandlers a e, ToYaarHandlers b e) => ToYaarHandlers (a <|> b) e where
+  hCasts e (Pair a b) = Pair (hCasts e a) (hCasts e b)
+  hCasts e (HandlerPair a b) = Pair (hCasts e a) (hCasts e b)
 
 class FromByteString a where
   fromByteString :: ByteString -> a
@@ -326,11 +326,11 @@ class FromByteString a where
 serve
   :: forall a b e m.
   ( ManySymbolLists (ExtractUrlList a)
-  , ToHandlerStack (ToHandlers Endpoint a)
+  , ToHandlerStack (ToHandlers YaarHandler a)
   , ExtractType b ~ m
-  , ToEndpoints b e
-  , ToEndpoint m Endpoint e
-  , Convertable (ChangeEndpoint b) (ToHandlers Endpoint a))
+  , ToYaarHandlers b e
+  , HCastable m YaarHandler e
+  , Convertable (ChangeEndpoint b) (ToHandlers YaarHandler a))
   => Proxy a
   -> b
   -> e
@@ -339,7 +339,7 @@ serve _ h env = application $ makeRoutes $ (toSymbolLists $ (Proxy :: Proxy (Ext
   where
     application !routes r respond =
       case lookupRequest r routes of
-        Just n -> processRequest r (toHandlerStack $ (convert (toEndpoints env h) :: (ToHandlers Endpoint a))) n >>= respond
+        Just n -> processRequest r (toHandlerStack $ (convert (hCasts env h) :: (ToHandlers YaarHandler a))) n >>= respond
         Nothing -> respond $ responseLBS status404 [] $ "Path does not exist."
     processRequest :: Request -> HandlerStack -> Int -> IO Response
     processRequest r (AddToStack h_ _) 0 = execute r h_

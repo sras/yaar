@@ -49,7 +49,7 @@ data NoContent = NoContent
 instance ContentType NoContent where
   getContentType _ = Nothing
 
-instance Handler (ResponseFormat '[] (Endpoint NoContent)) where
+instance Handler (ResponseFormat '[] (YaarHandler NoContent)) where
   execute _ (ResponseFormat h) = do
     _ <- h
     return $ responseLBS status200 [] ""
