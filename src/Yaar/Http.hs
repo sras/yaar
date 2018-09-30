@@ -158,24 +158,6 @@ instance Encodable HTML String where
 
 instance ContentType PlainText where
   getContentType _ = Just "text/plain"
-  doesMatch = wildCardDoesMatch
 
 instance ContentType HTML where
   getContentType _ = Just "text/html"
-  doesMatch = wildCardDoesMatch
-
--- Matches an endpoint with text or html
--- with a request with no accept type header
--- or accept type header with "*/*"
-wildCardDoesMatch
-  :: (ContentType a)
-  => Proxy a
-  -> (Maybe ByteString)
-  -> Bool
-wildCardDoesMatch p b =
-  case b of
-    Nothing -> True
-    Just c ->
-      if c == "*/*"
-      then  True
-      else c == (fromJust $ getContentType p)

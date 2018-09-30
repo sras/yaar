@@ -250,9 +250,13 @@ class ContentType a where
     case getContentType p of
       Just x ->
         case v of
-          Just b -> x == b
-          Nothing -> False
-      Nothing -> False
+          Just b -> (b == "*/*") || x == b
+          Nothing -> True
+      Nothing ->
+        case v of
+          Just b -> (b == "*/*")
+          Nothing -> True
+
 
 instance {-# OVERLAPPABLE #-} Convertable a a where
   convert = id
