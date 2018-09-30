@@ -112,6 +112,11 @@ main = hspec $ do
       simpleBody response `shouldBe` "Index"
       (statusCode.simpleStatus) response `shouldBe` 200
   describe "basic-behavior" $ do
+    it "should generate response for */* accept type" $ do
+      let session = request (setPath (defaultRequest { requestHeaders = [(hAccept, "*/*")] }) "/home/profile/bio")
+      response <- runSession session app
+      simpleBody response `shouldBe` "Index"
+      (statusCode.simpleStatus) response `shouldBe` 200
     it "should generate the right response - 1" $ do
       let session = request (setPath defaultRequest "/home/profile/bio")
       response <- runSession session app
