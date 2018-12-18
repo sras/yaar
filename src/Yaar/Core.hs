@@ -37,6 +37,7 @@ module Yaar.Core
   , Encodable(..)
   , UrlToRequestDerivable
   , RequestDerivable(..)
+  , RequestDerivableToHandlerArg
   , ToResponse(..)
   , Handler(..)
   , ResponseFormat(..)
@@ -130,6 +131,10 @@ type family UrlToRequestDerivable a
 
 type instance UrlToRequestDerivable  (UrlParam s a) = (UrlParam s a)
 
+type family RequestDerivableToHandlerArg a :: *
+
+type instance RequestDerivableToHandlerArg (UrlParam s a) = a
+
 type family ExtractHandler (m :: * -> *) (a :: *)  where
   ExtractHandler m ((a :: Symbol) :> b) = (ExtractHandler m b)
   ExtractHandler m (a :> b) = (UrlToRequestDerivable a) -> (ExtractHandler m b)
@@ -137,8 +142,8 @@ type family ExtractHandler (m :: * -> *) (a :: *)  where
 
 type family StripResponseFormat a where
   StripResponseFormat (ResponseFormat s a) = a
-  StripResponseFormat (a -> b) = (StripResponseFormat b)
-  StripResponseFormat (a <|> b) = (StripResponseFormat b) <|> (StripResponseFormat b)
+  StripResponseFormat (a -> b) = (RequestDerivableToHandlerArg a) -> (StripResponseFormat b)
+  StripResponseFormat (a <|> b) = (StripResponseFormat a) <|> (StripResponseFormat b)
 
 type Server a m = StripResponseFormat (ToHandlers m a)
 
@@ -306,23 +311,23 @@ type family ChangeEndpoint a where
   ChangeEndpoint (m a) = YaarHandler a
 
 class RunnableTo m1 m2 e where
-  runTo :: e -> m1 a -> m2 a
+  runTo :: e -> Request -> m1 a -> m2 a
 
 instance RunnableTo YaarHandler YaarHandler () where
-  runTo _ = id
+  runTo _ _ = id
 
 class ToYaarHandlers a e where
-  runTos :: e -> a -> ChangeEndpoint a
+  runTos :: e -> Request -> a -> ChangeEndpoint a
 
 instance {-# OVERLAPPABLE #-} (RunnableTo m1 YaarHandler e, ChangeEndpoint (m1 a) ~ YaarHandler a) => ToYaarHandlers (m1 a) e where
-  runTos e a = runTo e a
+  runTos e r a = runTo e r a
 
 instance (ToYaarHandlers b e) => ToYaarHandlers (a -> b) e where
-  runTos e fn = \x -> runTos e (fn x)
+  runTos e r fn = \x -> runTos e r (fn x)
 
 instance (ToYaarHandlers a e, ToYaarHandlers b e) => ToYaarHandlers (a <|> b) e where
-  runTos e (Pair a b) = Pair (runTos e a) (runTos e b)
-  runTos e (HandlerPair a b) = Pair (runTos e a) (runTos e b)
+  runTos e r (Pair a b) = Pair (runTos e r a) (runTos e r b)
+  runTos e r (HandlerPair a b) = Pair (runTos e r a) (runTos e r b)
 
 class FromByteString a where
   fromByteString :: ByteString -> a
@@ -343,7 +348,7 @@ serve _ h env = application $ makeRoutes $ (toSymbolLists $ (Proxy :: Proxy (Ext
   where
     application !routes r respond =
       case lookupRequest r routes of
-        Just n -> processRequest r (toHandlerStack $ (convert (runTos env h) :: (ToHandlers YaarHandler a))) n >>= respond
+        Just n -> processRequest r (toHandlerStack $ (convert (runTos env r h) :: (ToHandlers YaarHandler a))) n >>= respond
         Nothing -> respond $ responseLBS status404 [] $ "Path does not exist."
     processRequest :: Request -> HandlerStack -> Int -> IO Response
     processRequest r (AddToStack h_ _) 0 = execute r h_

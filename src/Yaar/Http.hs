@@ -5,6 +5,7 @@
 {-# Language TypeFamilies #-}
 {-# Language DataKinds #-}
 {-# Language PolyKinds #-}
+{-# Language UndecidableInstances #-}
 {-# Language TypeOperators #-}
 {-# Language ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
@@ -17,6 +18,7 @@ module Yaar.Http
   , ReqBody
   , RequestHeader
   , ResponseHeader
+  , QueryParam
   , addHeader
   , NoContent(..)
   )
@@ -33,14 +35,13 @@ import Network.Wai
   , responseLBS
   , queryString
   )
-import Network.HTTP.Types.Status (Status, status400, status200)
+import Network.HTTP.Types.Status (Status(..), status400, status200)
 import Network.HTTP.Types (HeaderName, Header)
 import GHC.TypeLits
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as LB
 import Data.String
 import Data.Proxy
-import Data.Maybe
 
 data OctetStream
 
@@ -49,7 +50,7 @@ data NoContent = NoContent
 instance ContentType NoContent where
   getContentType _ = Nothing
 
-instance Handler (ResponseFormat '[] (YaarHandler NoContent)) where
+instance Handler (ResponseFormat NoContent (YaarHandler a)) where
   execute _ (ResponseFormat h) = do
     _ <- h
     return $ responseLBS status200 [] ""
@@ -59,14 +60,30 @@ data JSON
 
 data ReqBody s a = ReqBody a
 
+type instance RequestDerivableToHandlerArg (ReqBody s a) = a
+
 type instance UrlToRequestDerivable (ReqBody s a) = ReqBody s a
+
+instance (RequestDerivable (ReqBody f a), RequestDerivable (ReqBody t a)) => RequestDerivable (ReqBody (f:t) a) where
+  extract req = do
+    a :: Either Status (ReqBody f a) <- extract req
+    case a of
+      Right (ReqBody b) -> pure $ Right (ReqBody b)
+      Left _ -> do
+        b :: Either Status (ReqBody t a) <- extract req
+        case b of
+          Right (ReqBody c) -> pure $ Right (ReqBody c)
+          Left x -> pure $ Left x
+
+instance RequestDerivable (ReqBody '[] a) where
+  extract _ = pure $ Left status400
 
 instance (FromJSON a) => RequestDerivable (ReqBody JSON a) where
   extract req = do
     body <- requestBody req
     return $ case eitherDecodeStrict body of
       Right a -> Right $ ReqBody a
-      Left _ -> Left $ status400
+      Left err -> Left $ status400 { statusMessage = encodeUtf8 $ pack $ "Decoding error" ++ err }
 
 instance Convertable (ReqBody s a) a where
   convert (ReqBody a) = a
@@ -102,7 +119,9 @@ instance Convertable (RequestHeader s a) a where
 
 data QueryParam s a = QueryParam a
 
-type instance UrlToRequestDerivable (QueryParam s a) = QueryParam s a
+type instance UrlToRequestDerivable (QueryParam s a) = QueryParam s (Maybe a)
+
+type instance RequestDerivableToHandlerArg (QueryParam s (Maybe a)) = Maybe a
 
 instance (KnownSymbol s, FromByteString a) => RequestDerivable (QueryParam s (Maybe a)) where
   extract r =
@@ -110,6 +129,9 @@ instance (KnownSymbol s, FromByteString a) => RequestDerivable (QueryParam s (Ma
       Just (Just a) -> return $ Right $ QueryParam $ Just $ fromByteString a
       Just Nothing -> return $ Right $ QueryParam $ Nothing
       Nothing -> return $ Right $ QueryParam Nothing
+
+instance Convertable (QueryParam s a) a where
+  convert (QueryParam a) = a
 
 --  to implement output Headers
 data ResponseHeader (s :: [Symbol]) a = ResponseHeader [(HeaderName, ByteString)] a
@@ -144,6 +166,9 @@ data HTML
 
 data PlainText
 
+instance Encodable OctetStream ByteString where
+  encode a _ = a
+
 instance Encodable PlainText Text where
   encode a _ = encodeUtf8 $ a
 
@@ -161,3 +186,6 @@ instance ContentType PlainText where
 
 instance ContentType HTML where
   getContentType _ = Just "text/html"
+
+instance ContentType OctetStream where
+  getContentType _ = Nothing

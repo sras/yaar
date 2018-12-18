@@ -22,15 +22,17 @@ import Data.Text.Encoding (encodeUtf8)
 import Data.Aeson
 import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as LB
+import Control.Monad.IO.Class
 
 type TestServer =  "home" :> "profile" :> "bio" :> (GET '[PlainText, HTML] String)
                <|> "home" :> "profile" :> "orders" :> (GET PlainText Text)
                <|> "home" :> "profile" :> "resume" :> (GET '[PlainText, JSON] Resume)
                <|> "home" :> "profile" :> "resume" :> "add" :> ReqBody JSON Resume :> (POST '[JSON] Resume)
                <|> "home" :> "post" :> UrlParam "id" Text :> (GET PlainText String)
+               <|> "home" :> "post" :> QueryParam "id" Text :> (GET PlainText String)
                <|> "request" :> "with" :> "header" :> UrlParam "id" Text :> (GET PlainText (ResponseHeader ["custom-header-1", "custom-header-2"] String))
                <|> "request" :> "with" :> "input" :> "header" :> RequestHeader "input-header" Text :> GET '[PlainText] String
-               <|> "request" :> "with" :> "no" :> "content" :> GET '[] NoContent
+               <|> "request" :> "with" :> "no" :> "content" :> GET NoContent NoContent
 
 data Resume = Resume { name :: Text } deriving (Generic, Show)
 
@@ -48,6 +50,7 @@ server =  handlerBio
       <|> handlerResume
       <|> handlerAddResume
       <|> handlerPost
+      <|> handlerPostQueryParam
       <|> handlerWithHeader
       <|> handlerHeaderInput
       <|> handlerWithNoContent
@@ -66,6 +69,9 @@ handlerAddResume r = return $ r
 
 handlerPost :: Text -> IO String
 handlerPost postId = return $ "Post " ++ (unpack postId)
+
+handlerPostQueryParam :: Maybe Text -> IO String
+handlerPostQueryParam (Just postId) = return $ "Post " ++ (unpack postId)
 
 handlerHeaderInput :: Text -> IO String
 handlerHeaderInput headerInput = return $ "Header value = " ++ (unpack headerInput)
@@ -97,14 +103,18 @@ handlerBio2 :: Maybe String -- A handler that runs in the Maybe
 handlerBio2 = return $ "Index"
 
 instance RunnableTo Maybe IO () where -- This instance enables the handler to run in Maybe
-  runTo _ (Just a)  = return a
-  runTo _ Nothing = error "No result for this endpoint"
+  runTo _ _ (Just a)  = return a
+  runTo _ _ Nothing = error "No result for this endpoint"
 
 anotherMonadApp :: Application
 anotherMonadApp = serve api2 server2 ()
 
 main :: IO ()
 main = hspec $ do
+  describe "Router test" $ do
+    it "should do basic matching" $ do
+      let routes = makeRoutes [["home", "post", "id", "GET"]]
+      (lookupRequest (setPath defaultRequest "/home/post/id") routes) `shouldBe` (Just 0)
   describe "basic-behavior-in-another-monad" $ do
     it "should generate the right response - 1" $ do
       let session = request (setPath defaultRequest "/home/profile/bio")
@@ -165,6 +175,15 @@ main = hspec $ do
       let 
         session = do
           r <- request (setPath (defaultRequest { requestHeaders = [(hAccept, "application/json")] }) "/home/post/id/21")
+          assertContentType "text/plain" r
+          return r
+      response <- runSession session app
+      simpleBody response `shouldBe` "Post 21"
+      (statusCode.simpleStatus) response `shouldBe` 200
+    it "should pass the param from query param to handler" $ do
+      let 
+        session = do
+          r <- request (setPath (defaultRequest { requestHeaders = [(hAccept, "application/json")] }) "/home/post?id=21")
           assertContentType "text/plain" r
           return r
       response <- runSession session app
