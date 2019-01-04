@@ -1,0 +1,22 @@
+# This is a sample build configuration for Haskell.
+# Check our guides at https://confluence.atlassian.com/x/5Q4SMw for more examples.
+# Only use spaces to indent your .yml configuration.
+# -----
+# You can specify a custom docker image from Docker Hub as your build environment.
+image: haskell:8.4.4
+
+pipelines:
+  default:
+    - step:
+        caches:
+          - docker
+          - stack-work
+          - stack-home
+        script: # Modify the commands below to build your repository.
+          - stack test
+        services:
+          - docker
+definitions:
+  caches:
+    stack-work: .stack-work
+    stack-home: ~/.stack

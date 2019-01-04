@@ -2,6 +2,7 @@
 {-# Language DataKinds #-}
 {-# Language RankNTypes #-}
 {-# Language KindSignatures #-}
+{-# Language DeriveGeneric #-}
 {-# Language ExistentialQuantification #-}
 {-# Language ScopedTypeVariables #-}
 {-# Language TypeOperators #-}
@@ -31,6 +32,7 @@ module Yaar.Core
   , CONNECT
   , OPTIONS
   , PATCH
+  , CUSTOM
   , serve
   , Convertable(..)
   , ContentType(..)
@@ -41,16 +43,16 @@ module Yaar.Core
   , ToResponse(..)
   , Handler(..)
   , ResponseFormat(..)
-  , FromByteString(..)
   , Server
-  ) 
+  , Method(..)
+  )
 where
 
 import GHC.TypeLits as TL
 import Data.Proxy
 import Data.List
 
-import Data.ByteString (ByteString)
+import Data.ByteString as BS (ByteString, isInfixOf)
 import Data.ByteString.Lazy (fromStrict)
 import Data.Text (pack, Text)
 import Data.Text.Encoding (encodeUtf8)
@@ -64,7 +66,8 @@ import Network.Wai
   , pathInfo
   )
 import Network.HTTP.Types (Status, HeaderName, hAccept, hContentType)
-import Network.HTTP.Types.Status (status200, status415, status404)
+import Network.HTTP.Types.Status (status200, status415, status404, status400, statusMessage)
+import Web.HttpApiData
 import Yaar.Routing
 
 -- some boiler plate to convert type level lists to value level list
@@ -97,6 +100,15 @@ data CONNECT format a
 data OPTIONS format a
 data PATCH format a
 data CUSTOM (s :: Symbol) format a
+
+class Method (a :: k -> * -> *) where
+  toMethodName :: (Proxy a) -> String
+
+instance Method GET where
+  toMethodName _ = "GET"
+
+instance Method POST where
+  toMethodName _ = "POST"
 
 data ResponseFormat format s = ResponseFormat s
 
@@ -183,15 +195,15 @@ type family ExtractUrlList a :: [[Symbol]] where
 class RequestDerivable a where
   extract :: Request -> IO (Either Status a)
 
-lookupUrlParam :: (FromByteString a) => [Text] -> Text -> Maybe (UrlParam s a)
+lookupUrlParam :: (FromHttpApiData a) => [Text] -> Text -> Either Status (UrlParam s a) 
 lookupUrlParam xs s = case elemIndex s xs of
-    Just i -> Just $ UrlParam $ fromByteString $ encodeUtf8 $ xs !! (i+1)
-    Nothing -> Nothing
-
-instance (FromByteString a, KnownSymbol s) => RequestDerivable (UrlParam s a) where
-  extract req = return $ case lookupUrlParam (pathInfo req) (pack $ symbolVal (Proxy :: Proxy s)) of
-    Just x -> Right x
+    Just i -> case parseUrlPiece $ xs !! (i+1) of
+      Right a -> Right $ UrlParam a
+      Left err -> Left $ status400 { statusMessage = encodeUtf8 err}
     Nothing -> Left $ status404
+
+instance (FromHttpApiData a, KnownSymbol s) => RequestDerivable (UrlParam s a) where
+  extract req = return $ lookupUrlParam (pathInfo req) (pack $ symbolVal (Proxy :: Proxy s))
 
 class Handler a where
   execute :: Request -> a -> IO Response
@@ -209,12 +221,12 @@ instance {-# OVERLAPPABLE #-} (ToResponse format a) => Handler (ResponseFormat f
     return $ toResponse v (Proxy :: Proxy format)
 
 instance (ToResponse format a, ContentType format, Handler (ResponseFormat formats (YaarHandler a))) => Handler (ResponseFormat (format:formats) (YaarHandler a)) where
-  execute r (ResponseFormat a) = if doesRequestMatchContentType r
+  execute r (ResponseFormat a) = if requestMatchContentType r
     then execute r (ResponseFormat a :: ResponseFormat format (YaarHandler a))
     else execute r (ResponseFormat a :: ResponseFormat formats (YaarHandler a))
     where
-      doesRequestMatchContentType :: Request -> Bool
-      doesRequestMatchContentType request =
+      requestMatchContentType :: Request -> Bool
+      requestMatchContentType request =
         doesMatch (Proxy :: Proxy format) $ lookupHeader request hAccept
       lookupHeader :: Request -> HeaderName -> Maybe ByteString
       lookupHeader r_ h = lookup h $ requestHeaders r_
@@ -250,17 +262,19 @@ class Convertable a b where
 
 class ContentType a where
   getContentType :: Proxy a -> Maybe ByteString
+  getContentType _ = Nothing
   doesMatch :: Proxy a -> (Maybe ByteString) -> Bool
   doesMatch p v =
     case getContentType p of
       Just x ->
         case v of
-          Just b -> (b == "*/*") || x == b
+          Just b -> (b == "*/*") || x `BS.isInfixOf`  b
           Nothing -> True
       Nothing ->
         case v of
           Just b -> (b == "*/*")
           Nothing -> True
+  {-# MINIMAL getContentType | doesMatch #-}
 
 
 instance {-# OVERLAPPABLE #-} Convertable a a where
@@ -311,26 +325,23 @@ type family ChangeEndpoint a where
   ChangeEndpoint (m a) = YaarHandler a
 
 class RunnableTo m1 m2 e where
-  runTo :: e -> Request -> m1 a -> m2 a
+  runTo :: e -> m1 a -> m2 a
 
 instance RunnableTo YaarHandler YaarHandler () where
-  runTo _ _ = id
+  runTo _ = id
 
 class ToYaarHandlers a e where
-  runTos :: e -> Request -> a -> ChangeEndpoint a
+  runTos :: e -> a -> ChangeEndpoint a
 
 instance {-# OVERLAPPABLE #-} (RunnableTo m1 YaarHandler e, ChangeEndpoint (m1 a) ~ YaarHandler a) => ToYaarHandlers (m1 a) e where
-  runTos e r a = runTo e r a
+  runTos e a = runTo e a
 
 instance (ToYaarHandlers b e) => ToYaarHandlers (a -> b) e where
-  runTos e r fn = \x -> runTos e r (fn x)
+  runTos e fn = \x -> runTos e (fn x)
 
 instance (ToYaarHandlers a e, ToYaarHandlers b e) => ToYaarHandlers (a <|> b) e where
-  runTos e r (Pair a b) = Pair (runTos e r a) (runTos e r b)
-  runTos e r (HandlerPair a b) = Pair (runTos e r a) (runTos e r b)
-
-class FromByteString a where
-  fromByteString :: ByteString -> a
+  runTos e (Pair a b) = Pair (runTos e a) (runTos e b)
+  runTos e (HandlerPair a b) = Pair (runTos e a) (runTos e b)
 
 serve
   :: forall a b e m.
@@ -342,13 +353,15 @@ serve
   , Convertable (ChangeEndpoint b) (ToHandlers YaarHandler a))
   => Proxy a
   -> b
-  -> e
+  -> (Request -> IO e)
   -> Application
-serve _ h env = application $ makeRoutes $ (toSymbolLists $ (Proxy :: Proxy (ExtractUrlList a))) 
+serve u h mkenv = application $ makeRoutes $ (toSymbolLists $ (Proxy :: Proxy (ExtractUrlList a)))
   where
     application !routes r respond =
       case lookupRequest r routes of
-        Just n -> processRequest r (toHandlerStack $ (convert (runTos env r h) :: (ToHandlers YaarHandler a))) n >>= respond
+        Just n -> do
+          env <- mkenv r
+          processRequest r (toHandlerStack $ (convert (runTos env h) :: (ToHandlers YaarHandler a))) n >>= respond
         Nothing -> respond $ responseLBS status404 [] $ "Path does not exist."
     processRequest :: Request -> HandlerStack -> Int -> IO Response
     processRequest r (AddToStack h_ _) 0 = execute r h_

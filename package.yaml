@@ -27,6 +27,8 @@ dependencies:
 - containers
 - aeson
 - deepseq
+- swagger2
+- http-api-data
 
 library:
   source-dirs: src
@@ -40,6 +42,7 @@ tests:
       Yaar.Core
       Yaar.Http
       Yaar.Routing
+      Yaar.Autodoc
     dependencies:
     - wai
     - wai-extra

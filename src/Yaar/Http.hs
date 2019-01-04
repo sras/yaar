@@ -25,11 +25,12 @@ module Yaar.Http
 where
 
 import Yaar.Core
+import Yaar.Autodoc
 import Data.Text.Encoding (encodeUtf8, decodeUtf8)
-import Data.Text (pack, Text)
+import Data.Text as T (concat, pack, Text)
 import Data.Aeson
 import Network.Wai
-  ( requestBody
+  ( lazyRequestBody
   , requestHeaders
   , mapResponseHeaders
   , responseLBS
@@ -42,6 +43,8 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as LB
 import Data.String
 import Data.Proxy
+import Data.Swagger (ToSchema(..), toSchema)
+import Web.HttpApiData
 
 data OctetStream
 
@@ -49,6 +52,9 @@ data NoContent = NoContent
 
 instance ContentType NoContent where
   getContentType _ = Nothing
+
+instance Encodable NoContent NoContent where
+  encode _ _ = ""
 
 instance Handler (ResponseFormat NoContent (YaarHandler a)) where
   execute _ (ResponseFormat h) = do
@@ -60,7 +66,24 @@ data JSON
 
 data ReqBody s a = ReqBody a
 
+instance {-# OVERLAPPING #-} (ToSchema a) => RouteInfoSegment (ReqBody '[] a) where
+  addRouteInfo a = (\x -> x {routeRequestBody = Just $ toSchema (Proxy :: Proxy a)})
+
+instance {-# OVERLAPPING #-} (ContentType format, ToSchema a, RouteInfoSegment (ReqBody xs a)) => RouteInfoSegment (ReqBody (format:xs) a) where
+  addRouteInfo a =
+    let
+      ri = addRouteInfo (Proxy :: Proxy (ReqBody xs a))
+    in 
+    case getContentType (Proxy :: Proxy format) of
+        Just f -> 
+          (\x -> let rx = ri x in x { routeRequestBodyFormat = f:routeRequestBodyFormat rx})
+        Nothing -> ri
+
+instance (ContentType s, ToSchema a) => RouteInfoSegment (RequestHeader s a) where
+  addRouteInfo a = (\x -> x { routeHeader = Just $ toSchema (Proxy :: Proxy a) }) 
+
 type instance RequestDerivableToHandlerArg (ReqBody s a) = a
+type instance RequestDerivableToHandlerArg (RequestHeader s a) = a
 
 type instance UrlToRequestDerivable (ReqBody s a) = ReqBody s a
 
@@ -76,12 +99,12 @@ instance (RequestDerivable (ReqBody f a), RequestDerivable (ReqBody t a)) => Req
           Left x -> pure $ Left x
 
 instance RequestDerivable (ReqBody '[] a) where
-  extract _ = pure $ Left status400
+  extract _ = pure $ Left status400 { statusMessage = encodeUtf8 $ "Unsupported format in request body"}
 
 instance (FromJSON a) => RequestDerivable (ReqBody JSON a) where
   extract req = do
-    body <- requestBody req
-    return $ case eitherDecodeStrict body of
+    body <- lazyRequestBody req
+    return $ case eitherDecode body of
       Right a -> Right $ ReqBody a
       Left err -> Left $ status400 { statusMessage = encodeUtf8 $ pack $ "Decoding error" ++ err }
 
@@ -100,17 +123,16 @@ data RequestHeader (s :: Symbol) a = RequestHeader a
 
 type instance UrlToRequestDerivable (RequestHeader s a) = RequestHeader s a
 
-instance (FromByteString a, KnownSymbol s) => RequestDerivable (RequestHeader s a) where
+instance (FromHttpApiData a, KnownSymbol s) => RequestDerivable (RequestHeader s a) where
   extract request = return $ extractHeaderValue (requestHeaders request) (symbolVal (Proxy :: Proxy s))
     where
       extractHeaderValue :: [Header] -> String -> Either Status (RequestHeader s a)
       extractHeaderValue headers headerName =
         case lookup (fromString headerName) headers of
-          Just x -> Right $ RequestHeader $ fromByteString $ x
-          Nothing -> Left $ status400
-
-instance FromByteString Text where
-  fromByteString = decodeUtf8
+          Just x -> case parseHeader x of
+            Right x_ -> Right $ RequestHeader $ x_
+            Left err -> Left $ status400 { statusMessage = encodeUtf8 $ T.concat ["Decoding error: ", err] }
+          Nothing -> Left $ status400 { statusMessage = encodeUtf8 $ pack $ "Header expected not found: " ++ headerName }
 
 instance Convertable (RequestHeader s a) a where
   convert (RequestHeader a) = a
@@ -123,10 +145,12 @@ type instance UrlToRequestDerivable (QueryParam s a) = QueryParam s (Maybe a)
 
 type instance RequestDerivableToHandlerArg (QueryParam s (Maybe a)) = Maybe a
 
-instance (KnownSymbol s, FromByteString a) => RequestDerivable (QueryParam s (Maybe a)) where
+instance (KnownSymbol s, FromHttpApiData a) => RequestDerivable (QueryParam s (Maybe a)) where
   extract r =
     case lookup (encodeUtf8 $ pack $ symbolVal (Proxy :: Proxy s)) $ queryString r of
-      Just (Just a) -> return $ Right $ QueryParam $ Just $ fromByteString a
+      Just (Just a) -> case parseHeader a of
+        Right a_ -> pure $ Right $ QueryParam $ Just a_
+        Left err -> pure $ Left $ status400 { statusMessage = encodeUtf8 $ T.concat [ "Decoding failed for query item :", err] }
       Just Nothing -> return $ Right $ QueryParam $ Nothing
       Nothing -> return $ Right $ QueryParam Nothing
 

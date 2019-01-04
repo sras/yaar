@@ -12,21 +12,176 @@ Right now, it can do the following.
 1. Endpoint handlers can have arguments that can come from the url (as segments or via key=value query pairs) or the request body.
 2. Each endpoint can accept the input in multiple formats.
 3. Each endpoint can respond in multiple formats.
+4. Auto generate api documentation from endpoint types.
 
 Please see the `test/Spec.hs` file in this repo to see a sample app.
 
-### How does this work?
 
-Say you want to create a small web app with two end points. Let us start by making this type.
+### How to make a web application using Yaar?
+
+Each endpoint/route in a Yaar application has its own type, that looks like the following.
+
+```
+"home" :> "profile" :> "bio" :> (GET '[HTML] Text)
+```
+
+This type represents an endpoint that will be available via a GET request at url "home/profile/bio" that returns a `Text` value in `HTML` format.
+The `'[HTML]` is a type level list, that can contain more than one type, and so a single endpoint can return data in multiple formats.
+For example, the following endpoint can return data in both HTML and XML formats.
+
+```
+"home" :> "profile" :> "bio" :> (GET '[HTML, XML] Text)
+```
+
+Note that while `HTML` is shipped with Yaar, `XML` is not. Anyway, the important point to note here is that the handler does not have to
+bother with the actual format that is contained in the response, and Yaar only expect handler to return a value of type `Text`. The final encoding
+and constructor of the response is handled by itself. It does this by looking at the `Accept` header in the request, and encodes the response in a matching format.
+
+Multiple endpoints can be combined using the `<|>` type operator forming the type of the complete app.
+
+```
+type AppType
+   =  "home" :> "profile" :> "bio" :> (GET '[HTML] Text)
+  <|> "home" :> "profile" :> "contact" :> (GET '[HTML] Text)
+```
+
+Now, you have to implement actual handlers for these endpoints. By default Yaar handlers run in `IO`. So both of the handlers for our App will be functions of type `IO Text`. Once we have the handler functions, we combine them using the `<|>` function to make the complete app as follows.
+
+```
+appHandlers :: Server AppType IO
+appHandlers
+  = bioHandler
+ <|> contactHandler
+```
+
+You can see the type which represents the entire app (`AppType` here) referenced here in the signature. Thus if there is a mismatch between your endpoint types and the handlers, you will get a type error here.
+
+
+```
+{-# Language OverloadedStrings #-}
+{-# Language TypeOperators #-}
+{-# Language DataKinds #-}
+{-# Language DeriveGeneric #-}
+{-# Language MultiParamTypeClasses #-}
+{-# Language TypeFamilies #-}
+
+import Yaar
+import Data.Text
+import Data.Proxy
+import Network.Wai (Application)
+import Network.Wai.Handler.Warp (run)
+
+type AppType
+   =  "home" :> "profile" :> "bio" :> (GET '[HTML] Text)
+  <|> "home" :> "profile" :> "contact" :> (GET '[HTML] Text)
+
+bioHandler :: IO Text
+bioHandler = pure "This is my Bio"
+
+contactHandler :: IO Text
+contactHandler = pure "This is my contact info"
+
+appHandlers :: Server AppType IO
+appHandlers
+  = bioHandler
+ <|> contactHandler
+
+app :: Application
+app = serve (Proxy :: Proxy AppType) appHandlers ()
+
+main = run 4000 app
+```
+
+That is it.
+
+### How to take in input
+
+#### From url - query format (?xyz=123)
+
+Use the type `QueryParam` in the type of the url as shown below
+
+``` 
+  "home" :> "post" :> QueryParam "id" Text :> (GET '[PlainText] String)
+```
+
+The above use of `QueryParam` sets the endpoint handler to recieve a `Text` value
+passed via url in form `/home/post?id=asdf`.
+
+The handler for this endpoint must accept a `Maybe Text` as its argument. It is a `Maybe` 
+because the route could be accessed without the query parameter.
+
+```
+  handlerPostQueryParam :: Maybe Text -> IO String
+  handlerPostQueryParam (Just postId) = return $ "Post " ++ (unpack postId)
+```
+
+#### From url - segment format (/xyz/123)
+
+Use the type `UrlParam` in the type of the url as shown below
+
+``` 
+  "home" :> "post" :> UrlParam "id" Text :> (GET '[PlainText] String)
+```
+
+The above use of `UrlParam` sets the endpoint handler to recieve a `Text` value
+passed via url in form `/home/post/id/asdf`.
+
+The handler for this endpoint must accept a `Text` as its argument.
+
+```
+  handlerPost :: Text -> IO String
+  handlerPost postId = return $ "Post " ++ (unpack postId)
+```
+
+#### From Request Body
+
+Use the type `ReqBody` in the endpoint type as shown below.
+
+```
+   "home" :> "profile" :> "resume" :> "add" :> ReqBody '[JSON] Resume :> (POST '[JSON] Resume)
+
+```
+
+The above use of `ReqBody` enables the endpoint to get a value of type
+`Resume` in `JSON` format in the body of the POST request.
+
+The handler must be a function with an argument of type `Resume`
+
+```
+handlerAddResume :: Resume -> IO Resume
+handlerAddResume r = return $ r
+```
+
+#### From Request Header
+
+Use the type `RequestHeader` in the endpoint type as shown below.
+
+```
+   "request" :> "with" :> "input" :> "header" :> RequestHeader "input-header" Text :> GET '[PlainText] String
+
+```
+
+The above use of `ReqBody` enables the endpoint to get a value of type
+`Resume` in `JSON` format in the body of the POST request.
+
+The handler must be a function with an argument of type `Text` (because that is what is specified by `RequestHeader "input-header" Text` in url's type).
+
+```
+handlerHeaderInput :: Text -> IO String
+handlerHeaderInput headerInput = return $ "Header value = " ++ (unpack headerInput)
+```
+
+### Internals Overview
+
+First let us see how a Haskell type gets converted into a bunch of string paths that the router can lookup while routing. Let the following be the type of our app. It has only two endpoints
 
 ```
 type TestServer
-   =  "home" :> "profile" :> "bio" :> (GET '[PlainText, HTML] String)
-  <|> "home" :> "profile" :> "orders" :> (GET PlainText Text)
+   =  "home" :> "profile" :> "bio" :> (GET '[HTML] Text)
+  <|> "home" :> "profile" :> "contact" :> (GET '[HTML] Text)
 ```
 
-By using some simple type family stuff, we convert this type above to a type level
-list, and then it is converted to a value level list with plain old strings that represents every single route in the app.
+The framework, by using some simple type family stuff, converts this type above to a type level list of type level strings. Then that type level list is converted to a value level list with plain old strings that represents every single route in the app.
 
 The following is the type family that convert the url type, into a type level list.
 ```
@@ -59,7 +214,7 @@ type family ExtractUrl (a :: k) :: [Symbol] where
 
 ```
 
-The type class thing that converts a type level list to a plain old list is as follows.
+The type class thing that converts a type level list of symbols to a two dimensional list of strings is as follows.
 
 ```
 class ManySymbols a where
@@ -81,8 +236,6 @@ instance (ManySymbolLists a, ManySymbols x) => ManySymbolLists (x:a) where
   toSymbolLists _ = toSymbolList (Proxy :: Proxy x) : (toSymbolLists (Proxy :: Proxy a))
 ```
 
-Disclaimer: I got this from some stackoverflow thread. 
-
 So now we have the routes in a plain list. Next we need to find a way to represent a bunch of handlers as a Haskell type, and have a mechanism to match it with the type that represents bunch of routes that we made earlier. That is done by the class constraints, type family applications and types of the following function
 
 ```
@@ -101,5 +254,81 @@ serve
 serve _ h env = application $ makeRoutes $ (toSymbolLists $ (Proxy :: Proxy (ExtractUrlList a))) 
 ```
 
-The `a` in the first argument is the type of all the urls that make up the app. The second argument `h` is a value that wraps all the endpoint handler functions. The type safety that make sure the handlers match the url types comes from the Haskell's type checking on these two types. The third argument `env` is an environment that will be used in case of a custom end point type, to run that type into IO.
+The `a` in the first argument is the type of all the urls that make up the app. The second argument `h` is a value that wraps all the endpoint handler functions. The type safety that make sure the handlers match the url types comes from the Haskell's type checking on these two types. The third argument `env` is an environment that will be used in case of a custom end point type, to run that type into `IO`.
 
+The structure that wraps the handlers is like an onion, with the handler of the very first endpoint at the outer most layer (Yea, just like a list in Haskell). When a http request comes in, we look at each of our routes that is in the value level list of routes. Say we find a match at index `n`. We then unwraps `n` layers of our handler wrapper and there we will have the handler to handle this very request.
+
+### Executing the handlers
+
+Yaar uses the following type class to actually execute the handlers.
+
+```
+class Handler a where
+  execute :: Request -> a -> IO Response
+```
+The type machinery in Yaar converts each of your handlers functions into functions that are instances the `Handler` class. This automagically happens without any explicit instance definitions from the user.
+
+So we will be able to run all of these handlers without having to worry about the arguments and their types as long as we have a `Request`.
+
+### How are the handlers converted into instances of `Handler`?
+
+Yaar defines a type class `Convertable` to generalize conversion between
+two things.
+
+```
+class Convertable a b where
+  convert :: a -> b
+```
+
+So let us consider a simple url type and see how this plays out.
+
+```
+"address" :> ReqBody '[JSON] Address :> POST '[HTML] Person
+```
+
+
+Using some type families, Yaar converts this type into a function type.
+
+```
+ReqBody '[JSON] Address -> ResponseFormat format (IO a)
+```
+
+This is the actual handler that Yaar needs to execute this route. But since
+we don't want to bother our user with the whole ReqBody stuff, we use some more
+type family magic and convert it to...
+
+```
+Address -> IO Person
+```
+
+And this is what we expect from user. The conversion of this function to the function 
+
+```
+ReqBody '[JSON] Address -> ResponseFormat format (IO a)
+```
+
+Is done by the generally defined instances of `Convertable` typeclass some of the relavant ones are shown below here.
+
+```
+instance {-# OVERLAPPABLE #-} Convertable a a where
+  convert = id
+
+instance {-# OVERLAPPABLE #-} (Convertable a b) => Convertable (b -> c) (a -> c) where
+  convert fn = fn.convert
+
+instance {-# OVERLAPPING #-} (Convertable b c) => Convertable (a -> b) (a -> c) where
+  convert fn = convert.fn
+
+instance {-# OVERLAPPING #-} (Convertable c a, Convertable b d) => Convertable (a -> b) (c -> d) where
+  convert fn = convert.fn.convert
+
+instance Convertable (ReqBody s a) a where
+  convert (ReqBody a) = a
+
+instance Convertable (IO a) (ResponseFormat format (IO a)) where
+  convert a = ResponseFormat $ a
+
+```
+
+Similar conversion is applied to the whole app type via type families enabling us to write
+handler functions free of framework specific types and wrappers.

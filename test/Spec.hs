@@ -25,14 +25,14 @@ import qualified Data.ByteString.Lazy as LB
 import Control.Monad.IO.Class
 
 type TestServer =  "home" :> "profile" :> "bio" :> (GET '[PlainText, HTML] String)
-               <|> "home" :> "profile" :> "orders" :> (GET PlainText Text)
+               <|> "home" :> "profile" :> "orders" :> (GET '[PlainText] Text)
                <|> "home" :> "profile" :> "resume" :> (GET '[PlainText, JSON] Resume)
-               <|> "home" :> "profile" :> "resume" :> "add" :> ReqBody JSON Resume :> (POST '[JSON] Resume)
-               <|> "home" :> "post" :> UrlParam "id" Text :> (GET PlainText String)
-               <|> "home" :> "post" :> QueryParam "id" Text :> (GET PlainText String)
-               <|> "request" :> "with" :> "header" :> UrlParam "id" Text :> (GET PlainText (ResponseHeader ["custom-header-1", "custom-header-2"] String))
+               <|> "home" :> "profile" :> "resume" :> "add" :> ReqBody '[JSON] Resume :> (POST '[JSON] Resume)
+               <|> "home" :> "post" :> UrlParam "id" Text :> (GET '[PlainText] String)
+               <|> "home" :> "post" :> QueryParam "id" Text :> (GET '[PlainText] String)
+               <|> "request" :> "with" :> "header" :> UrlParam "id" Text :> (GET '[PlainText] (ResponseHeader ["custom-header-1", "custom-header-2"] String))
                <|> "request" :> "with" :> "input" :> "header" :> RequestHeader "input-header" Text :> GET '[PlainText] String
-               <|> "request" :> "with" :> "no" :> "content" :> GET NoContent NoContent
+               <|> "request" :> "with" :> "no" :> "content" :> GET '[NoContent] NoContent
 
 data Resume = Resume { name :: Text } deriving (Generic, Show)
 
@@ -45,6 +45,7 @@ instance FromJSON Resume where
 instance Encodable PlainText Resume where
   encode v _ = encodeUtf8 $ pack $ show v
 
+server :: Server TestServer IO
 server =  handlerBio
       <|> handlerOrders
       <|> handlerResume
@@ -90,7 +91,7 @@ api :: Proxy TestServer
 api = Proxy
 
 app :: Application
-app = serve api server ()
+app = serve api server $ const $ pure ()
 
 type TestServer2 =  "home" :> "profile" :> "bio" :> (GET '[PlainText, HTML] String)
 
@@ -103,11 +104,11 @@ handlerBio2 :: Maybe String -- A handler that runs in the Maybe
 handlerBio2 = return $ "Index"
 
 instance RunnableTo Maybe IO () where -- This instance enables the handler to run in Maybe
-  runTo _ _ (Just a)  = return a
-  runTo _ _ Nothing = error "No result for this endpoint"
+  runTo _ (Just a)  = return a
+  runTo _ Nothing = error "No result for this endpoint"
 
 anotherMonadApp :: Application
-anotherMonadApp = serve api2 server2 ()
+anotherMonadApp = serve api2 server2 $ const $ pure ()
 
 main :: IO ()
 main = hspec $ do
@@ -174,7 +175,7 @@ main = hspec $ do
     it "should pass the param from url to handler" $ do
       let 
         session = do
-          r <- request (setPath (defaultRequest { requestHeaders = [(hAccept, "application/json")] }) "/home/post/id/21")
+          r <- request (setPath (defaultRequest { requestHeaders = [(hAccept, "text/plain")] }) "/home/post/id/21")
           assertContentType "text/plain" r
           return r
       response <- runSession session app
@@ -183,7 +184,7 @@ main = hspec $ do
     it "should pass the param from query param to handler" $ do
       let 
         session = do
-          r <- request (setPath (defaultRequest { requestHeaders = [(hAccept, "application/json")] }) "/home/post?id=21")
+          r <- request (setPath (defaultRequest { requestHeaders = [(hAccept, "text/plain")] }) "/home/post?id=21")
           assertContentType "text/plain" r
           return r
       response <- runSession session app
