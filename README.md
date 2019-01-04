@@ -56,6 +56,15 @@ appHandlers
 
 You can see the type which represents the entire app (`AppType` here) referenced here in the signature. Thus if there is a mismatch between your endpoint types and the handlers, you will get a type error here.
 
+And we finally make a `wai` `Application` from our handlers and handler types using the `serve` function as shown below.
+
+```
+app :: Application
+app = serve (Proxy :: Proxy AppType) appHandlers $ const $ pure ()
+```
+
+The last argument here is an function that creates an environment derived from the incoming request, for the handlers to execute. By default our handlers run in IO, and does not require an environment to run and thus we are passing the empty tuple as the environment.
+
 
 ```
 {-# Language OverloadedStrings #-}
@@ -87,7 +96,7 @@ appHandlers
  <|> contactHandler
 
 app :: Application
-app = serve (Proxy :: Proxy AppType) appHandlers ()
+app = serve (Proxy :: Proxy AppType) appHandlers $ const $ pure ()
 
 main = run 4000 app
 ```
@@ -170,6 +179,107 @@ The handler must be a function with an argument of type `Text` (because that is 
 handlerHeaderInput :: Text -> IO String
 handlerHeaderInput headerInput = return $ "Header value = " ++ (unpack headerInput)
 ```
+
+### How to add a new output format
+
+Output formats are handled via two typeclasses `ContentType` and `Encodable`. They are defined as 
+
+```
+class ContentType a where
+  getContentType :: Proxy a -> Maybe ByteString
+  doesMatch :: Proxy a -> (Maybe ByteString) -> Bool
+```
+
+```
+class Encodable format a where
+  encode :: a -> Proxy format -> ByteString
+```
+
+The `ContentType`'s `getContentType` function allows you to specify the mime type for your format. The `doesMatch` function allows user to implement
+custom logic while matching the `Accept` header in incoming request. Either one of these needs to be implemented for the instance to be minimal.
+
+
+The `Encodable` typeclass defines how a value of type `a` can be encoded in a bytestring using the `format` format.
+
+This is how Yaar adds support for json endpoints with `JSON` format
+
+```
+instance ContentType JSON where
+  getContentType _ = Just "application/json"
+
+instance (ToJSON a) => Encodable JSON a where
+  encode v _ =  LB.toStrict $ Data.Aeson.encode $ toJSON v
+```
+
+That is about it.
+
+### How to make a type available via query param, url segment or via header
+
+All of these are done via the [FromHttpApiData](https://hackage.haskell.org/package/http-api-data-0.4/docs/Web-HttpApiData.html#t:FromHttpApiData) typeclass in [http-api-data](http://hackage.haskell.org/package/http-api-data) package.
+
+As long as a type has this instance, you will be able to get it in a url query, url segment or via a http header.
+
+### How to accept a new format via RequestBody
+
+Yaar supports `JSON` data coming in RequestBody. What if you want to accept XML data coming in a request's body. The typeclasses involved here are `RequestDerivable` and the `ContentType` typeclass we saw earlier.
+`RequestDerivable` typeclass allows the user to define how a value in a certain format can be extracted from the body of the request. It is defined as follows.
+
+```
+class RequestDerivable a where
+  extract :: Request -> IO (Either Status a)
+```
+
+To add support for `XML`, first we will create a dummy type for denoting `XML`
+
+```
+data XML
+```
+
+And define `ContentType` and `RequestDerivable` instances for it. Let us assume that we want to accept a value of type `User` coming in xml format.
+
+```
+instance ContentType XML where
+  getContentType _ = Just "application/xml"
+```
+
+```
+instance RequestDerivable (ReqBody XML User) where
+  extract req = do
+    body <- lazyRequestBody req  -- this is a function from Wai package that is re-exported by Yaar
+    -- code to decode xml and create 
+    -- a value of type User from it
+    
+```
+### How to make my Handlers run in a different Monad
+
+By default Yaar handlers run in `IO`. But it is possible to make the handlers run in a different monad using the `RunnableTo` typeclass.
+
+```
+class RunnableTo m1 m2 e where
+  runTo :: e -> m1 a -> m2 a
+```
+
+In the signature of `runTo` function, `e` is an environment value, `m1` is the monad which we want the handlers to run in and `m2` should be the `IO` monad.
+So if we want our handlers to run in `Identity` monad, here is how we can do it.
+
+```
+instance RunnableTo Identity YaarHandler () where
+  runTo _ im = pure $ runIdentity im
+```
+
+In the above, we have used () for environment, because we don't need an environment value to run a value of type `Identity` to `IO`. But often you want
+to use something like a `Reader` monad, that requires some kind of environment to run it.
+
+We pass the environment to the handlers via the `serve` function. Actually the `serve` function accepts a function that takes in a `Request` and returns an environment which can be used to run the actuall handler.
+This can be used to implement sessions and what not.
+
+Here is how we pass the environment creation function to the serve function.
+
+```
+app :: Application
+app = serve (Proxy :: Proxy AppType) appHandlers $ (\r -> ())
+```
+
 
 ### Internals Overview
 
