@@ -237,20 +237,6 @@ instance {-# OVERLAPPABLE #-} Handler (ResponseFormat '[] (YaarHandler a)) where
 instance Convertable (YaarHandler a) (ResponseFormat format (YaarHandler a)) where
   convert a = ResponseFormat $ a
 
-data HandlerStack where
-  EmptyStack :: HandlerStack
-  AddToStack :: forall a. (Handler a) => a -> HandlerStack -> HandlerStack
-
-class ToHandlerStack a where
-  toHandlerStack :: a -> HandlerStack
-
-instance {-# OVERLAPPING #-} (ToHandlerStack b) => ToHandlerStack (a <|> b) where
-  toHandlerStack (HandlerPair a b) = AddToStack a (toHandlerStack b)
-  toHandlerStack (Pair _ _) = error "Unexpected use of Constructor 'Pair'"
-
-instance (Handler a) => ToHandlerStack a where
-  toHandlerStack a = AddToStack a EmptyStack
-
 class Encodable format a where
   encode :: a -> Proxy format -> ByteString
   
@@ -342,6 +328,20 @@ instance (ToYaarHandlers b e) => ToYaarHandlers (a -> b) e where
 instance (ToYaarHandlers a e, ToYaarHandlers b e) => ToYaarHandlers (a <|> b) e where
   runTos e (Pair a b) = Pair (runTos e a) (runTos e b)
   runTos e (HandlerPair a b) = Pair (runTos e a) (runTos e b)
+
+data HandlerStack where
+  EmptyStack :: HandlerStack
+  AddToStack :: forall a. (Handler a) => a -> HandlerStack -> HandlerStack
+
+class ToHandlerStack a where
+  toHandlerStack :: a -> HandlerStack
+
+instance {-# OVERLAPPING #-} (ToHandlerStack b) => ToHandlerStack (a <|> b) where
+  toHandlerStack (HandlerPair a b) = AddToStack a (toHandlerStack b)
+  toHandlerStack (Pair _ _) = error "Unexpected use of Constructor 'Pair'"
+
+instance (Handler a) => ToHandlerStack a where
+  toHandlerStack a = AddToStack a EmptyStack
 
 serve
   :: forall a b e m.
