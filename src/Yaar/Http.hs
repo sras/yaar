@@ -76,7 +76,7 @@ instance {-# OVERLAPPING #-} (ContentType format, ToSchema a, RouteInfoSegment (
     in 
     case getContentType (Proxy :: Proxy format) of
         Just f -> 
-          (\x -> let rx = ri x in x { routeRequestBodyFormat = f:routeRequestBodyFormat rx})
+          (\x -> let rx = ri x in rx { routeRequestBodyFormat = f:routeRequestBodyFormat rx})
         Nothing -> ri
 
 instance (ContentType s, ToSchema a) => RouteInfoSegment (RequestHeader s a) where
@@ -156,6 +156,16 @@ instance (KnownSymbol s, FromHttpApiData a) => RequestDerivable (QueryParam s (M
 
 instance Convertable (QueryParam s a) a where
   convert (QueryParam a) = a
+
+instance (KnownSymbol a, ToSchema b) => RouteInfoSegment (QueryParam a b) where
+  addRouteInfo a = let
+    addQuery :: [(String, Schema)] -> [(String, Schema)]
+    addQuery in_ = ( (symbolVal (Proxy :: Proxy a)), toSchema (Proxy :: Proxy b) ):in_
+    in (\x ->
+         x { routeQuery = case routeQuery x of
+               Just x_ -> Just $ addQuery x_
+               Nothing -> Just $ addQuery []
+           })
 
 --  to implement output Headers
 data ResponseHeader (s :: [Symbol]) a = ResponseHeader [(HeaderName, ByteString)] a

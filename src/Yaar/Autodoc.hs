@@ -18,6 +18,7 @@ module Yaar.Autodoc
   , toSimpleRouteInfo
   , RouteInfoSimple(..)
   , Schema(..)
+  , RouteComponent(..)
   )
 where
 
@@ -45,6 +46,7 @@ data RouteInfoPara a b =
     , routeMethod :: Maybe String
     , routeOutputFormat :: [b]
     , routeOutput :: Maybe Schema
+    , routeQuery :: Maybe [(String, Schema)]
     } deriving (Generic)
 
 type RouteInfo = RouteInfoPara [RouteComponent] ByteString
@@ -75,6 +77,7 @@ emptyRouteInfo =
     , routeMethod = Nothing
     , routeOutputFormat = []
     , routeOutput = Nothing
+    , routeQuery = Nothing
     }
 
 class RouteInfoSegment a where
@@ -91,7 +94,7 @@ instance {-# OVERLAPPABLE #-} (ContentType format, Method method, RouteInfoSegme
             case getContentType (Proxy :: Proxy format) of
               Just x -> x
               Nothing -> "-"
-        in x { routeMethod = Just "GET", routeOutputFormat = ct: routeOutputFormat x })
+        in x { routeMethod = Just (toMethodName (Proxy :: Proxy method)), routeOutputFormat = ct: routeOutputFormat x })
 
 instance (KnownSymbol a) => RouteInfoSegment a where
   addRouteInfo a = (\x -> x { routePath = (TextSegment $ symbolVal (Proxy :: Proxy a)):routePath x })

@@ -279,6 +279,7 @@ instance Convertable (UrlParam s a) a where
   convert (UrlParam a) = a
 
 instance (Convertable a c, Handler c, Convertable b d) => Convertable (a <|> b) (c <|> d) where
+  -- The separate constructors `Pair` and `HandlerPair` is relavant here.
   convert (Pair a b) = HandlerPair (convert a) (convert b)
   convert (HandlerPair _ _) = error "Unexpected use of Constructor 'HandlerPair'"
 
@@ -341,6 +342,7 @@ instance {-# OVERLAPPING #-} (ToHandlerStack b) => ToHandlerStack (a <|> b) wher
   toHandlerStack (Pair _ _) = error "Unexpected use of Constructor 'Pair'"
 
 instance (Handler a) => ToHandlerStack a where
+  -- The base of the handler stack, or if we have only one handler function.
   toHandlerStack a = AddToStack a EmptyStack
 
 serve
