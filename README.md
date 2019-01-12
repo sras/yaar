@@ -270,7 +270,7 @@ instance RunnableTo Identity YaarHandler () where
 In the above, we have used () for environment, because we don't need an environment value to run a value of type `Identity` to `IO`. But often you want
 to use something like a `Reader` monad, that requires some kind of environment to run it.
 
-We pass the environment to the handlers via the `serve` function. Actually the `serve` function accepts a function that takes in a `Request` and returns an environment which can be used to run the actuall handler.
+We pass the environment to the handlers via the `serve` function. Actually the `serve` function accepts a function that takes in a `Request` and returns an environment which can be used to run the actual handler.
 This can be used to implement sessions and what not.
 
 Here is how we pass the environment creation function to the serve function.
