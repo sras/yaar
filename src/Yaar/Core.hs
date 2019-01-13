@@ -357,7 +357,7 @@ serve
   -> b
   -> (Request -> IO e)
   -> Application
-serve u h mkenv = application $ makeRoutes $ (toSymbolLists $ (Proxy :: Proxy (ExtractUrlList a)))
+serve _ h mkenv = application $ makeRoutes $ (toSymbolLists $ (Proxy :: Proxy (ExtractUrlList a)))
   where
     application !routes r respond =
       case lookupRequest r routes of

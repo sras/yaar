@@ -2,7 +2,7 @@
 module Yaar
   ( module Yaar.Core
   , module Yaar.Http
-  , RouteInfoSimple(..)
+  , RouteInfoSimple
   , toSimpleRouteInfo
   , ToApiDoc(..)
   , lazyRequestBody

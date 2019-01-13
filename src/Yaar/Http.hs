@@ -26,7 +26,7 @@ where
 
 import Yaar.Core
 import Yaar.Autodoc
-import Data.Text.Encoding (encodeUtf8, decodeUtf8)
+import Data.Text.Encoding (encodeUtf8)
 import Data.Text as T (concat, pack, Text)
 import Data.Aeson
 import Network.Wai
@@ -66,10 +66,10 @@ data JSON
 data RequestBody s a = RequestBody a
 
 instance {-# OVERLAPPING #-} (ToYaarSchema a) => RouteInfoSegment (RequestBody '[] a) where
-  addRouteInfo a = (\x -> x {routeRequestBody = Just $ toYaarSchema (Proxy :: Proxy a)})
+  addRouteInfo _ = (\x -> x {routeRequestBody = Just $ toYaarSchema (Proxy :: Proxy a)})
 
 instance {-# OVERLAPPING #-} (ContentType format, ToYaarSchema a, RouteInfoSegment (RequestBody xs a)) => RouteInfoSegment (RequestBody (format:xs) a) where
-  addRouteInfo a =
+  addRouteInfo _ =
     let
       ri = addRouteInfo (Proxy :: Proxy (RequestBody xs a))
     in 
@@ -79,10 +79,10 @@ instance {-# OVERLAPPING #-} (ContentType format, ToYaarSchema a, RouteInfoSegme
         Nothing -> ri
 
 instance (KnownSymbol s, ToYaarSchema a) => RouteInfoSegment (RequestHeader s a) where
-  addRouteInfo a = let
-    addHeader :: [KeyedSchema] -> [KeyedSchema]
-    addHeader i = (KeyedSchema (symbolVal (Proxy :: Proxy s)) (toYaarSchema (Proxy :: Proxy a))):i
-    in (\x -> x { routeRequestHeaders = addHeader $ routeRequestHeaders x }) 
+  addRouteInfo _ = let
+    addHeader_ :: [KeyedSchema] -> [KeyedSchema]
+    addHeader_ i = (KeyedSchema (symbolVal (Proxy :: Proxy s)) (toYaarSchema (Proxy :: Proxy a))):i
+    in (\x -> x { routeRequestHeaders = addHeader_ $ routeRequestHeaders x }) 
 
 type instance RequestDerivableToHandlerArg (RequestBody s a) = a
 type instance RequestDerivableToHandlerArg (RequestHeader s a) = a
@@ -160,7 +160,7 @@ instance Convertable (QueryParam s a) a where
   convert (QueryParam a) = a
 
 instance (KnownSymbol a, ToYaarSchema b) => RouteInfoSegment (QueryParam a b) where
-  addRouteInfo a = let
+  addRouteInfo _ = let
     addQuery :: [KeyedSchema] -> [KeyedSchema]
     addQuery in_ = (KeyedSchema (symbolVal (Proxy :: Proxy a)) $ toYaarSchema (Proxy :: Proxy b) ):in_
     in (\x ->
