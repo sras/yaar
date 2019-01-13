@@ -15,7 +15,7 @@ module Yaar.Http
   , PlainText
   , JSON
   , OctetStream
-  , ReqBody
+  , RequestBody
   , RequestHeader
   , ResponseHeader
   , QueryParam
@@ -64,52 +64,55 @@ instance Handler (ResponseFormat NoContent (YaarHandler a)) where
 -- to add support for input coming in request body
 data JSON
 
-data ReqBody s a = ReqBody a
+data RequestBody s a = RequestBody a
 
-instance {-# OVERLAPPING #-} (ToSchema a) => RouteInfoSegment (ReqBody '[] a) where
+instance {-# OVERLAPPING #-} (ToSchema a) => RouteInfoSegment (RequestBody '[] a) where
   addRouteInfo a = (\x -> x {routeRequestBody = Just $ toSchema (Proxy :: Proxy a)})
 
-instance {-# OVERLAPPING #-} (ContentType format, ToSchema a, RouteInfoSegment (ReqBody xs a)) => RouteInfoSegment (ReqBody (format:xs) a) where
+instance {-# OVERLAPPING #-} (ContentType format, ToSchema a, RouteInfoSegment (RequestBody xs a)) => RouteInfoSegment (RequestBody (format:xs) a) where
   addRouteInfo a =
     let
-      ri = addRouteInfo (Proxy :: Proxy (ReqBody xs a))
+      ri = addRouteInfo (Proxy :: Proxy (RequestBody xs a))
     in 
     case getContentType (Proxy :: Proxy format) of
         Just f -> 
           (\x -> let rx = ri x in rx { routeRequestBodyFormat = f:routeRequestBodyFormat rx})
         Nothing -> ri
 
-instance (ContentType s, ToSchema a) => RouteInfoSegment (RequestHeader s a) where
-  addRouteInfo a = (\x -> x { routeHeader = Just $ toSchema (Proxy :: Proxy a) }) 
+instance (KnownSymbol s, ToSchema a) => RouteInfoSegment (RequestHeader s a) where
+  addRouteInfo a = let
+    addHeader :: [(String, Schema)] -> [(String, Schema)]
+    addHeader i = (symbolVal (Proxy :: Proxy s), toSchema (Proxy :: Proxy a)):i
+    in (\x -> x { routeRequestHeaders = addHeader $ routeRequestHeaders x }) 
 
-type instance RequestDerivableToHandlerArg (ReqBody s a) = a
+type instance RequestDerivableToHandlerArg (RequestBody s a) = a
 type instance RequestDerivableToHandlerArg (RequestHeader s a) = a
 
-type instance UrlToRequestDerivable (ReqBody s a) = ReqBody s a
+type instance UrlToRequestDerivable (RequestBody s a) = RequestBody s a
 
-instance (RequestDerivable (ReqBody f a), RequestDerivable (ReqBody t a)) => RequestDerivable (ReqBody (f:t) a) where
+instance (RequestDerivable (RequestBody f a), RequestDerivable (RequestBody t a)) => RequestDerivable (RequestBody (f:t) a) where
   extract req = do
-    a :: Either Status (ReqBody f a) <- extract req
+    a :: Either Status (RequestBody f a) <- extract req
     case a of
-      Right (ReqBody b) -> pure $ Right (ReqBody b)
+      Right (RequestBody b) -> pure $ Right (RequestBody b)
       Left _ -> do
-        b :: Either Status (ReqBody t a) <- extract req
+        b :: Either Status (RequestBody t a) <- extract req
         case b of
-          Right (ReqBody c) -> pure $ Right (ReqBody c)
+          Right (RequestBody c) -> pure $ Right (RequestBody c)
           Left x -> pure $ Left x
 
-instance RequestDerivable (ReqBody '[] a) where
+instance RequestDerivable (RequestBody '[] a) where
   extract _ = pure $ Left status400 { statusMessage = encodeUtf8 $ "Unsupported format in request body"}
 
-instance (FromJSON a) => RequestDerivable (ReqBody JSON a) where
+instance (FromJSON a) => RequestDerivable (RequestBody JSON a) where
   extract req = do
     body <- lazyRequestBody req
     return $ case eitherDecode body of
-      Right a -> Right $ ReqBody a
+      Right a -> Right $ RequestBody a
       Left err -> Left $ status400 { statusMessage = encodeUtf8 $ pack $ "Decoding error" ++ err }
 
-instance Convertable (ReqBody s a) a where
-  convert (ReqBody a) = a
+instance Convertable (RequestBody s a) a where
+  convert (RequestBody a) = a
 
 -- For output in json
 instance ContentType JSON where
@@ -162,10 +165,7 @@ instance (KnownSymbol a, ToSchema b) => RouteInfoSegment (QueryParam a b) where
     addQuery :: [(String, Schema)] -> [(String, Schema)]
     addQuery in_ = ( (symbolVal (Proxy :: Proxy a)), toSchema (Proxy :: Proxy b) ):in_
     in (\x ->
-         x { routeQuery = case routeQuery x of
-               Just x_ -> Just $ addQuery x_
-               Nothing -> Just $ addQuery []
-           })
+         x { routeQuery = addQuery (routeQuery x) })
 
 --  to implement output Headers
 data ResponseHeader (s :: [Symbol]) a = ResponseHeader [(HeaderName, ByteString)] a

@@ -27,7 +27,7 @@ import Control.Monad.IO.Class
 type TestServer =  "home" :> "profile" :> "bio" :> (GET '[PlainText, HTML] String)
                <|> "home" :> "profile" :> "orders" :> (GET '[PlainText] Text)
                <|> "home" :> "profile" :> "resume" :> (GET '[PlainText, JSON] Resume)
-               <|> "home" :> "profile" :> "resume" :> "add" :> ReqBody '[JSON] Resume :> (POST '[JSON] Resume)
+               <|> "home" :> "profile" :> "resume" :> "add" :> RequestBody '[JSON] Resume :> (POST '[JSON] Resume)
                <|> "home" :> "post" :> UrlParam "id" Text :> (GET '[PlainText] String)
                <|> "home" :> "post" :> QueryParam "id" Text :> (GET '[PlainText] String)
                <|> "request" :> "with" :> "header" :> UrlParam "id" Text :> (GET '[PlainText] (ResponseHeader ["custom-header-1", "custom-header-2"] String))

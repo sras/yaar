@@ -42,11 +42,11 @@ data RouteInfoPara a b =
     { routePath :: a
     , routeRequestBody :: Maybe Schema
     , routeRequestBodyFormat :: [b]
-    , routeHeader :: Maybe Schema
+    , routeRequestHeaders :: [(String, Schema)]
     , routeMethod :: Maybe String
     , routeOutputFormat :: [b]
     , routeOutput :: Maybe Schema
-    , routeQuery :: Maybe [(String, Schema)]
+    , routeQuery :: [(String, Schema)]
     } deriving (Generic)
 
 type RouteInfo = RouteInfoPara [RouteComponent] ByteString
@@ -73,20 +73,20 @@ emptyRouteInfo =
     { routePath = []
     , routeRequestBody = Nothing
     , routeRequestBodyFormat = []
-    , routeHeader = Nothing
+    , routeRequestHeaders = []
     , routeMethod = Nothing
     , routeOutputFormat = []
     , routeOutput = Nothing
-    , routeQuery = Nothing
+    , routeQuery = []
     }
 
 class RouteInfoSegment a where
   addRouteInfo :: Proxy a -> (RouteInfo -> RouteInfo)
 
 instance (ToSchema a, Method method) => RouteInfoSegment (method '[] a) where
-  addRouteInfo _ = (\x -> x { routeOutput = Just $ toSchema (Proxy :: Proxy a), routeMethod = Just "GET", routeOutputFormat = [] })
+  addRouteInfo _ = (\x -> x { routeOutput = Just $ toSchema (Proxy :: Proxy a), routeMethod = Just (toMethodName (Proxy :: Proxy method)), routeOutputFormat = [] })
 
-instance {-# OVERLAPPABLE #-} (ContentType format, ToSchema a, Method method, RouteInfoSegment (method xs a)) => RouteInfoSegment (method (format:xs) a) where
+instance {-# OVERLAPPABLE #-} (ContentType format, ToSchema a, RouteInfoSegment (method xs a)) => RouteInfoSegment (method (format:xs) a) where
   addRouteInfo _ =
     (\x -> 
         let
@@ -94,7 +94,8 @@ instance {-# OVERLAPPABLE #-} (ContentType format, ToSchema a, Method method, Ro
             case getContentType (Proxy :: Proxy format) of
               Just x -> x
               Nothing -> "-"
-        in x { routeOutput  = Just $ toSchema (Proxy :: Proxy a), routeMethod = Just (toMethodName (Proxy :: Proxy method)), routeOutputFormat = ct: routeOutputFormat x })
+          rx = addRouteInfo (Proxy :: Proxy (method xs a)) x
+        in rx { routeOutput  = Just $ toSchema (Proxy :: Proxy a), routeOutputFormat = ct: routeOutputFormat rx })
 
 instance (KnownSymbol a) => RouteInfoSegment a where
   addRouteInfo a = (\x -> x { routePath = (TextSegment $ symbolVal (Proxy :: Proxy a)):routePath x })
