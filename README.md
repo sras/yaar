@@ -105,22 +105,20 @@ That is it.
 
 ### How to add HTTP headers to a response
 
-Let our endpoiont
-
 If you want to add a header with name "MyHeaderName" with value "MyHeaderValue", to an endpoint that return a value of type `String`
 
-that is, let our endpoint with out header be
+that is, let our endpoint without the header be
 
 ```
            "request" :> "with" :> "header" :> (GET '[PlainText] String)
 ```
 
-To change this type to accomodate our header, modify the `String` in the last segment to wrap in the `ResponseHeader` wrapper.
+To change this type to accomodate our header, modify the `String` in the last segment to wrap in the `ResponseHeader` type.
 that is, change `GET '[PlainText] String` to `GET '[PlainText] (ResponseHeader ["MyHeaderName"] String)`.
 
 
 ```
-           <|> "request" :> "with" :> "header" :> (GET '[PlainText] (ResponseHeader ["MyHeaderName"] String))
+"request" :> "with" :> "header" :> (GET '[PlainText] (ResponseHeader ["MyHeaderName"] String))
 ```
 
 Now we have to add the actual header from our handler. Let this be our handler without the header.
@@ -156,7 +154,7 @@ For example, here is how you add two headers to the endpoint
     handlerWithHeader :: IO String
     handlerWithHeader = pure $
       addHeader (Proxy :: Proxy "MyHeaderName") "MyHeaderValue" $
-      addHeader (Proxy :: Proxy "MyHeaderName2") "MyHeaderValue" $"abc"
+      addHeader (Proxy :: Proxy "MyHeaderName2") "MyHeaderValue2" $"abc"
 ```
 
 ### How to take input
