@@ -64,7 +64,7 @@ toSimpleRouteInfo :: RouteInfo -> RouteInfoSimple
 toSimpleRouteInfo r
   = r { routePath = intercalate "/" $ toStringRouteComponent <$> (routePath r)
       , routeOutputFormat = unpack <$> routeOutputFormat r
-      , routeRequestBodyFormat = []
+      , routeRequestBodyFormat = unpack <$> routeRequestBodyFormat r
       }
 
 emptyRouteInfo :: RouteInfo 
@@ -86,7 +86,7 @@ class RouteInfoSegment a where
 instance (ToSchema a, Method method) => RouteInfoSegment (method '[] a) where
   addRouteInfo _ = (\x -> x { routeOutput = Just $ toSchema (Proxy :: Proxy a), routeMethod = Just "GET", routeOutputFormat = [] })
 
-instance {-# OVERLAPPABLE #-} (ContentType format, Method method, RouteInfoSegment (method xs a)) => RouteInfoSegment (method (format:xs) a) where
+instance {-# OVERLAPPABLE #-} (ContentType format, ToSchema a, Method method, RouteInfoSegment (method xs a)) => RouteInfoSegment (method (format:xs) a) where
   addRouteInfo _ =
     (\x -> 
         let
@@ -94,7 +94,7 @@ instance {-# OVERLAPPABLE #-} (ContentType format, Method method, RouteInfoSegme
             case getContentType (Proxy :: Proxy format) of
               Just x -> x
               Nothing -> "-"
-        in x { routeMethod = Just (toMethodName (Proxy :: Proxy method)), routeOutputFormat = ct: routeOutputFormat x })
+        in x { routeOutput  = Just $ toSchema (Proxy :: Proxy a), routeMethod = Just (toMethodName (Proxy :: Proxy method)), routeOutputFormat = ct: routeOutputFormat x })
 
 instance (KnownSymbol a) => RouteInfoSegment a where
   addRouteInfo a = (\x -> x { routePath = (TextSegment $ symbolVal (Proxy :: Proxy a)):routePath x })
