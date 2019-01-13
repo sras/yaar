@@ -299,8 +299,10 @@ instance ContentType XML where
 instance RequestDerivable (ReqBody XML User) where
   extract req = do
     body <- lazyRequestBody req  -- this is a function from Wai package that is re-exported by Yaar
-    -- code to decode xml and create 
-    -- a value of type User from it
+    user <- do
+      -- code to decode xml and create 
+      -- a value of type User from it
+    pure $ Right user
     
 ```
 ### How to make my Handlers run in a different Monad
