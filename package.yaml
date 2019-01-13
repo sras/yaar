@@ -4,6 +4,7 @@ license:             BSD3
 author:              "Sandeep.C.R"
 maintainer:          "sandeepcr2@gmail.com"
 copyright:           "2018 Sandeep.C.R"
+category:            "web"
 
 extra-source-files:
 - README.md
@@ -16,7 +17,7 @@ extra-source-files:
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description:        ""
+description:         "A web framework"
 
 dependencies:
 - base >= 4.7 && < 5
@@ -35,7 +36,6 @@ library:
 
 ghc-options:
   - -Wall
-  - -Werror
 
 tests:
   yaar-test:
