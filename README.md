@@ -110,7 +110,7 @@ If you want to add a header with name "MyHeaderName" with value "MyHeaderValue",
 that is, let our endpoint without the header be
 
 ```
-           "request" :> "with" :> "header" :> (GET '[PlainText] String)
+"request" :> "with" :> "header" :> (GET '[PlainText] String)
 ```
 
 To change this type to accomodate our header, modify the `String` in the last segment to wrap in the `ResponseHeader` type.
@@ -147,14 +147,14 @@ are provided in the endpoint type.
 For example, here is how you add two headers to the endpoint
 
 ```
-     "request" :> "with" :> "header" :> (GET '[PlainText] (ResponseHeader ["MyHeaderName", "MyHeaderName2"] String))
+"request" :> "with" :> "header" :> (GET '[PlainText] (ResponseHeader ["MyHeaderName", "MyHeaderName2"] String))
 ```
 
 ```
-    handlerWithHeader :: IO String
-    handlerWithHeader = pure $
-      addHeader (Proxy :: Proxy "MyHeaderName") "MyHeaderValue" $
-      addHeader (Proxy :: Proxy "MyHeaderName2") "MyHeaderValue2" $"abc"
+handlerWithHeader :: IO String
+handlerWithHeader = pure $
+  addHeader (Proxy :: Proxy "MyHeaderName") "MyHeaderValue" $
+  addHeader (Proxy :: Proxy "MyHeaderName2") "MyHeaderValue2" $"abc"
 ```
 
 ### How to take input
@@ -164,7 +164,7 @@ For example, here is how you add two headers to the endpoint
 Use the type `QueryParam` in the type of the url as shown below
 
 ``` 
-  "home" :> "post" :> QueryParam "id" Text :> (GET '[PlainText] String)
+"home" :> "post" :> QueryParam "id" Text :> (GET '[PlainText] String)
 ```
 
 The above use of `QueryParam` sets the endpoint handler to recieve a `Text` value
@@ -174,8 +174,8 @@ The handler for this endpoint must accept a `Maybe Text` as its argument. It is 
 because the route could be accessed without the query parameter.
 
 ```
-  handlerPostQueryParam :: Maybe Text -> IO String
-  handlerPostQueryParam (Just postId) = return $ "Post " ++ (unpack postId)
+handlerPostQueryParam :: Maybe Text -> IO String
+handlerPostQueryParam (Just postId) = return $ "Post " ++ (unpack postId)
 ```
 
 #### From url - segment format (/xyz/123)
@@ -183,7 +183,7 @@ because the route could be accessed without the query parameter.
 Use the type `UrlParam` in the type of the url as shown below
 
 ``` 
-  "home" :> "post" :> UrlParam "id" Text :> (GET '[PlainText] String)
+"home" :> "post" :> UrlParam "id" Text :> (GET '[PlainText] String)
 ```
 
 The above use of `UrlParam` sets the endpoint handler to recieve a `Text` value
@@ -192,8 +192,8 @@ passed via url in form `/home/post/id/asdf`.
 The handler for this endpoint must accept a `Text` as its argument.
 
 ```
-  handlerPost :: Text -> IO String
-  handlerPost postId = return $ "Post " ++ (unpack postId)
+handlerPost :: Text -> IO String
+handlerPost postId = return $ "Post " ++ (unpack postId)
 ```
 
 #### From Request Body
@@ -201,7 +201,7 @@ The handler for this endpoint must accept a `Text` as its argument.
 Use the type `ReqBody` in the endpoint type as shown below.
 
 ```
-   "home" :> "profile" :> "resume" :> "add" :> ReqBody '[JSON] Resume :> (POST '[JSON] Resume)
+"home" :> "profile" :> "resume" :> "add" :> ReqBody '[JSON] Resume :> (POST '[JSON] Resume)
 
 ```
 
@@ -220,8 +220,7 @@ handlerAddResume r = return $ r
 Use the type `RequestHeader` in the endpoint type as shown below.
 
 ```
-   "request" :> "with" :> "input" :> "header" :> RequestHeader "input-header" Text :> GET '[PlainText] String
-
+"request" :> "with" :> "input" :> "header" :> RequestHeader "input-header" Text :> GET '[PlainText] String
 ```
 
 The above use of `ReqBody` enables the endpoint to get a value of type
