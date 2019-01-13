@@ -43,7 +43,6 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString.Lazy as LB
 import Data.String
 import Data.Proxy
-import Data.Swagger (ToSchema(..), toSchema)
 import Web.HttpApiData
 
 data OctetStream
@@ -66,10 +65,10 @@ data JSON
 
 data RequestBody s a = RequestBody a
 
-instance {-# OVERLAPPING #-} (ToSchema a) => RouteInfoSegment (RequestBody '[] a) where
-  addRouteInfo a = (\x -> x {routeRequestBody = Just $ toSchema (Proxy :: Proxy a)})
+instance {-# OVERLAPPING #-} (ToYaarSchema a) => RouteInfoSegment (RequestBody '[] a) where
+  addRouteInfo a = (\x -> x {routeRequestBody = Just $ toYaarSchema (Proxy :: Proxy a)})
 
-instance {-# OVERLAPPING #-} (ContentType format, ToSchema a, RouteInfoSegment (RequestBody xs a)) => RouteInfoSegment (RequestBody (format:xs) a) where
+instance {-# OVERLAPPING #-} (ContentType format, ToYaarSchema a, RouteInfoSegment (RequestBody xs a)) => RouteInfoSegment (RequestBody (format:xs) a) where
   addRouteInfo a =
     let
       ri = addRouteInfo (Proxy :: Proxy (RequestBody xs a))
@@ -79,10 +78,10 @@ instance {-# OVERLAPPING #-} (ContentType format, ToSchema a, RouteInfoSegment (
           (\x -> let rx = ri x in rx { routeRequestBodyFormat = f:routeRequestBodyFormat rx})
         Nothing -> ri
 
-instance (KnownSymbol s, ToSchema a) => RouteInfoSegment (RequestHeader s a) where
+instance (KnownSymbol s, ToYaarSchema a) => RouteInfoSegment (RequestHeader s a) where
   addRouteInfo a = let
-    addHeader :: [(String, Schema)] -> [(String, Schema)]
-    addHeader i = (symbolVal (Proxy :: Proxy s), toSchema (Proxy :: Proxy a)):i
+    addHeader :: [(String, YaarSchema)] -> [(String, YaarSchema)]
+    addHeader i = (symbolVal (Proxy :: Proxy s), toYaarSchema (Proxy :: Proxy a)):i
     in (\x -> x { routeRequestHeaders = addHeader $ routeRequestHeaders x }) 
 
 type instance RequestDerivableToHandlerArg (RequestBody s a) = a
@@ -160,10 +159,10 @@ instance (KnownSymbol s, FromHttpApiData a) => RequestDerivable (QueryParam s (M
 instance Convertable (QueryParam s a) a where
   convert (QueryParam a) = a
 
-instance (KnownSymbol a, ToSchema b) => RouteInfoSegment (QueryParam a b) where
+instance (KnownSymbol a, ToYaarSchema b) => RouteInfoSegment (QueryParam a b) where
   addRouteInfo a = let
-    addQuery :: [(String, Schema)] -> [(String, Schema)]
-    addQuery in_ = ( (symbolVal (Proxy :: Proxy a)), toSchema (Proxy :: Proxy b) ):in_
+    addQuery :: [(String, YaarSchema)] -> [(String, YaarSchema)]
+    addQuery in_ = ( (symbolVal (Proxy :: Proxy a)), toYaarSchema (Proxy :: Proxy b) ):in_
     in (\x ->
          x { routeQuery = addQuery (routeQuery x) })
 

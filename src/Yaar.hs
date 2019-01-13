@@ -6,6 +6,10 @@ module Yaar
   , toSimpleRouteInfo
   , ToApiDoc(..)
   , lazyRequestBody
+  , ToYaarSchema(..)
+  , SimpleSchema(..)
+  , YaarSchema(..)
+  , simpleSchema
   )
 where
 

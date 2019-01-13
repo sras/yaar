@@ -19,6 +19,10 @@ module Yaar.Autodoc
   , RouteInfoSimple(..)
   , Schema(..)
   , RouteComponent(..)
+  , ToYaarSchema(..)
+  , YaarSchema(..)
+  , SimpleSchema(..)
+  , simpleSchema
   )
 where
 
@@ -35,18 +39,43 @@ import Data.ByteString.Char8 (unpack)
 instance ToSchema RouteInfoSimple where
   declareNamedSchema a = pure $ NamedSchema (Just "RouteInfoSimple") mempty
 
-data RouteComponent = TextSegment String | ParaSegment String Schema deriving (Generic)
+data RouteComponent = TextSegment String | ParaSegment String YaarSchema deriving (Generic)
+
+data SimpleSchema
+  = SimpleSchema
+      { schemaTypeName :: String
+      , schemaProperties :: [(String, YaarSchema)]
+      } deriving (Generic)
+
+data YaarSchema = Simple SimpleSchema | Full Schema deriving (Generic)
+
+simpleSchema :: String -> [(String, YaarSchema)] -> YaarSchema
+simpleSchema n l = Simple $ SimpleSchema { schemaTypeName = n, schemaProperties = l }
+
+instance Aeson.ToJSON SimpleSchema where
+  toJSON = Aeson.genericToJSON Aeson.defaultOptions
+
+instance Aeson.ToJSON YaarSchema where
+  toJSON v = case v of
+    Full s -> Aeson.toJSON s
+    Simple s -> Aeson.toJSON s
+
+class ToYaarSchema a where
+  toYaarSchema :: Proxy a -> YaarSchema
+
+instance {-# OVERLAPPABLE #-} (ToSchema a) => ToYaarSchema a where
+  toYaarSchema a = Full $ toSchema a
 
 data RouteInfoPara a b =
   RouteInfo
     { routePath :: a
-    , routeRequestBody :: Maybe Schema
+    , routeRequestBody :: Maybe YaarSchema
     , routeRequestBodyFormat :: [b]
-    , routeRequestHeaders :: [(String, Schema)]
+    , routeRequestHeaders :: [(String, YaarSchema)]
     , routeMethod :: Maybe String
     , routeOutputFormat :: [b]
-    , routeOutput :: Maybe Schema
-    , routeQuery :: [(String, Schema)]
+    , routeOutput :: Maybe YaarSchema
+    , routeQuery :: [(String, YaarSchema)]
     } deriving (Generic)
 
 type RouteInfo = RouteInfoPara [RouteComponent] ByteString
@@ -83,10 +112,10 @@ emptyRouteInfo =
 class RouteInfoSegment a where
   addRouteInfo :: Proxy a -> (RouteInfo -> RouteInfo)
 
-instance (ToSchema a, Method method) => RouteInfoSegment (method '[] a) where
-  addRouteInfo _ = (\x -> x { routeOutput = Just $ toSchema (Proxy :: Proxy a), routeMethod = Just (toMethodName (Proxy :: Proxy method)), routeOutputFormat = [] })
+instance (ToYaarSchema a, Method method) => RouteInfoSegment (method '[] a) where
+  addRouteInfo _ = (\x -> x { routeOutput = Just $ toYaarSchema (Proxy :: Proxy a), routeMethod = Just (toMethodName (Proxy :: Proxy method)), routeOutputFormat = [] })
 
-instance {-# OVERLAPPABLE #-} (ContentType format, ToSchema a, RouteInfoSegment (method xs a)) => RouteInfoSegment (method (format:xs) a) where
+instance {-# OVERLAPPABLE #-} (ContentType format, ToYaarSchema a, RouteInfoSegment (method xs a)) => RouteInfoSegment (method (format:xs) a) where
   addRouteInfo _ =
     (\x -> 
         let
@@ -95,13 +124,13 @@ instance {-# OVERLAPPABLE #-} (ContentType format, ToSchema a, RouteInfoSegment 
               Just x -> x
               Nothing -> "-"
           rx = addRouteInfo (Proxy :: Proxy (method xs a)) x
-        in rx { routeOutput  = Just $ toSchema (Proxy :: Proxy a), routeOutputFormat = ct: routeOutputFormat rx })
+        in rx { routeOutput  = Just $ toYaarSchema (Proxy :: Proxy a), routeOutputFormat = ct: routeOutputFormat rx })
 
 instance (KnownSymbol a) => RouteInfoSegment a where
   addRouteInfo a = (\x -> x { routePath = (TextSegment $ symbolVal (Proxy :: Proxy a)):routePath x })
 
-instance (KnownSymbol a, ToSchema b) => RouteInfoSegment (UrlParam a b) where
-  addRouteInfo a = (\x -> x { routePath = (ParaSegment (symbolVal (Proxy :: Proxy a)) $ toSchema (Proxy :: Proxy b) ):routePath x })
+instance (KnownSymbol a, ToYaarSchema b) => RouteInfoSegment (UrlParam a b) where
+  addRouteInfo a = (\x -> x { routePath = (ParaSegment (symbolVal (Proxy :: Proxy a)) $ toYaarSchema (Proxy :: Proxy b) ):routePath x })
 
 instance (RouteInfoSegment a, RouteInfoSegment b) => RouteInfoSegment (a :> b) where
   addRouteInfo _ = (addRouteInfo (Proxy :: Proxy a)) . (addRouteInfo (Proxy :: Proxy b))
