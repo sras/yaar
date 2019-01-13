@@ -80,8 +80,8 @@ instance {-# OVERLAPPING #-} (ContentType format, ToYaarSchema a, RouteInfoSegme
 
 instance (KnownSymbol s, ToYaarSchema a) => RouteInfoSegment (RequestHeader s a) where
   addRouteInfo a = let
-    addHeader :: [(String, YaarSchema)] -> [(String, YaarSchema)]
-    addHeader i = (symbolVal (Proxy :: Proxy s), toYaarSchema (Proxy :: Proxy a)):i
+    addHeader :: [KeyedSchema] -> [KeyedSchema]
+    addHeader i = (KeyedSchema (symbolVal (Proxy :: Proxy s)) (toYaarSchema (Proxy :: Proxy a))):i
     in (\x -> x { routeRequestHeaders = addHeader $ routeRequestHeaders x }) 
 
 type instance RequestDerivableToHandlerArg (RequestBody s a) = a
@@ -161,8 +161,8 @@ instance Convertable (QueryParam s a) a where
 
 instance (KnownSymbol a, ToYaarSchema b) => RouteInfoSegment (QueryParam a b) where
   addRouteInfo a = let
-    addQuery :: [(String, YaarSchema)] -> [(String, YaarSchema)]
-    addQuery in_ = ( (symbolVal (Proxy :: Proxy a)), toYaarSchema (Proxy :: Proxy b) ):in_
+    addQuery :: [KeyedSchema] -> [KeyedSchema]
+    addQuery in_ = (KeyedSchema (symbolVal (Proxy :: Proxy a)) $ toYaarSchema (Proxy :: Proxy b) ):in_
     in (\x ->
          x { routeQuery = addQuery (routeQuery x) })
 

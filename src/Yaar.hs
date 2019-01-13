@@ -10,6 +10,7 @@ module Yaar
   , SimpleSchema(..)
   , YaarSchema(..)
   , simpleSchema
+  , KeyedSchema(..)
   )
 where
 
