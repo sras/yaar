@@ -68,7 +68,7 @@ data RequestBody s a = RequestBody a
 instance {-# OVERLAPPING #-} (ToYaarSchema a) => RouteInfoSegment (RequestBody '[] a) where
   addRouteInfo _ = (\x -> x {routeRequestBody = Just $ toYaarSchema (Proxy :: Proxy a)})
 
-instance {-# OVERLAPPING #-} (ContentType format, ToYaarSchema a, RouteInfoSegment (RequestBody xs a)) => RouteInfoSegment (RequestBody (format:xs) a) where
+instance {-# OVERLAPPING #-} (ContentType format, RouteInfoSegment (RequestBody xs a)) => RouteInfoSegment (RequestBody (format:xs) a) where
   addRouteInfo _ =
     let
       ri = addRouteInfo (Proxy :: Proxy (RequestBody xs a))

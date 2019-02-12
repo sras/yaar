@@ -34,6 +34,7 @@ import Data.Proxy
 import Yaar.Core
 import GHC.TypeLits as TL
 import Data.List
+import Data.Maybe
 import Data.Swagger
 import Data.ByteString.Char8 (unpack)
 
@@ -93,6 +94,7 @@ data RouteInfoPara a b =
     , routeOutputFormat :: [b]
     , routeOutput :: Maybe YaarSchema
     , routeQuery :: [KeyedSchema]
+    , routeParams :: [YaarSchema]
     } deriving (Generic)
 
 type RouteInfo = RouteInfoPara [RouteComponent] ByteString
@@ -104,7 +106,7 @@ instance Aeson.ToJSON RouteInfoSimple where
 
 toStringRouteComponent :: RouteComponent -> String
 toStringRouteComponent (TextSegment s) = s
-toStringRouteComponent (ParaSegment (Just s) _) = "{" ++ s ++ "}"
+toStringRouteComponent (ParaSegment (Just s) _) = "" ++ s ++ "/{param}"
 toStringRouteComponent (ParaSegment Nothing _) = "{param}"
 
 toSimpleRouteInfo :: RouteInfo -> RouteInfoSimple
@@ -112,6 +114,7 @@ toSimpleRouteInfo r
   = r { routePath = intercalate "/" $ toStringRouteComponent <$> (routePath r)
       , routeOutputFormat = unpack <$> routeOutputFormat r
       , routeRequestBodyFormat = unpack <$> routeRequestBodyFormat r
+      , routeParams = collectParamSchemas $ routePath r
       }
 
 emptyRouteInfo :: RouteInfo 
@@ -125,7 +128,14 @@ emptyRouteInfo =
     , routeOutputFormat = []
     , routeOutput = Nothing
     , routeQuery = []
+    , routeParams = []
     }
+
+collectParamSchemas :: [RouteComponent] -> [YaarSchema]
+collectParamSchemas rcs = catMaybes $ fn <$> rcs
+  where
+    fn (ParaSegment _ a) = Just $ a
+    fn _ = Nothing
 
 class RouteInfoSegment a where
   addRouteInfo :: Proxy a -> (RouteInfo -> RouteInfo)

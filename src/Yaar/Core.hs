@@ -113,6 +113,12 @@ instance Method GET where
 instance Method POST where
   toMethodName _ = "POST"
 
+instance Method DELETE where
+  toMethodName _ = "DELETE"
+
+instance Method PUT where
+  toMethodName _ = "PUT"
+
 data ResponseFormat format s = ResponseFormat s
 
 data UrlParam (segment :: Symbol) a = UrlParam a
