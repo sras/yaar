@@ -4,6 +4,7 @@
 {-# Language DeriveGeneric #-}
 {-# Language MultiParamTypeClasses #-}
 {-# Language TypeFamilies #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 import Yaar
 import Yaar.Routing
@@ -13,22 +14,18 @@ import Network.HTTP.Types.Status (statusCode)
 import Network.Wai.Internal
 import Network.Wai (Application, defaultRequest)
 import Network.Wai.Test
-import Control.Exception
-import Control.DeepSeq (force)
 import Data.Text (Text, pack, unpack)
 import Data.Proxy
 import GHC.Generics
 import Data.Text.Encoding (encodeUtf8)
 import Data.Aeson
-import Data.ByteString (ByteString)
-import qualified Data.ByteString.Lazy as LB
-import Control.Monad.IO.Class
 
 type TestServer =  "home" :> "profile" :> "bio" :> (GET '[PlainText, HTML] String)
                <|> "home" :> "profile" :> "orders" :> (GET '[PlainText] Text)
                <|> "home" :> "profile" :> "resume" :> (GET '[PlainText, JSON] Resume)
                <|> "home" :> "profile" :> "resume" :> "add" :> RequestBody '[JSON] Resume :> (POST '[JSON] Resume)
                <|> "home" :> "post" :> UrlParam "id" Text :> (GET '[PlainText] String)
+               <|> "home" :> "postWithoutSegment" :> SegmentParam Text :> (GET '[PlainText] String)
                <|> "home" :> "post" :> QueryParam "id" Text :> (GET '[PlainText] String)
                <|> "request" :> "with" :> "header" :> UrlParam "id" Text :> (GET '[PlainText] (ResponseHeader ["custom-header-1", "custom-header-2"] String))
                <|> "request" :> "with" :> "input" :> "header" :> RequestHeader "input-header" Text :> GET '[PlainText] String
@@ -51,6 +48,7 @@ server =  handlerBio
       <|> handlerResume
       <|> handlerAddResume
       <|> handlerPost
+      <|> handlerPostWithoutSegment
       <|> handlerPostQueryParam
       <|> handlerWithHeader
       <|> handlerHeaderInput
@@ -71,8 +69,12 @@ handlerAddResume r = return $ r
 handlerPost :: Text -> IO String
 handlerPost postId = return $ "Post " ++ (unpack postId)
 
+handlerPostWithoutSegment :: Text -> IO String
+handlerPostWithoutSegment postId = return $ "Post " ++ (unpack postId)
+
 handlerPostQueryParam :: Maybe Text -> IO String
 handlerPostQueryParam (Just postId) = return $ "Post " ++ (unpack postId)
+handlerPostQueryParam Nothing = error "Missing expected url segment"
 
 handlerHeaderInput :: Text -> IO String
 handlerHeaderInput headerInput = return $ "Header value = " ++ (unpack headerInput)
@@ -82,19 +84,20 @@ handlerWithNoContent = do
   return $ NoContent
 
 handlerWithHeader :: Text -> IO (ResponseHeader '["custom-header-1", "custom-header-2"] String)
-handlerWithHeader id = return $
+handlerWithHeader id_ = return $
   addHeader (Proxy :: Proxy "custom-header-1") "header-1-value" $
   addHeader (Proxy :: Proxy "custom-header-2") "header-2-value" $
-  "Header Request " ++ (unpack id)
+  "Header Request " ++ (unpack id_)
 
 api :: Proxy TestServer
 api = Proxy
 
 app :: Application
-app = serve api server $ const $ pure ()
+app = serve api server (\_ _ -> pure ()) Nothing
 
 type TestServer2 =  "home" :> "profile" :> "bio" :> (GET '[PlainText, HTML] String)
 
+server2 :: Server TestServer2 Maybe
 server2 =  handlerBio2
 
 api2 :: Proxy TestServer2
@@ -108,7 +111,7 @@ instance RunnableTo Maybe IO () where -- This instance enables the handler to ru
   runTo _ Nothing = error "No result for this endpoint"
 
 anotherMonadApp :: Application
-anotherMonadApp = serve api2 server2 $ const $ pure ()
+anotherMonadApp = serve api2 server2 (\_ _ -> pure ()) Nothing
 
 main :: IO ()
 main = hspec $ do
@@ -181,6 +184,15 @@ main = hspec $ do
       response <- runSession session app
       simpleBody response `shouldBe` "Post 21"
       (statusCode.simpleStatus) response `shouldBe` 200
+    it "should pass the unnamed param from url to handler" $ do
+      let 
+        session = do
+          r <- request (setPath (defaultRequest { requestHeaders = [(hAccept, "text/plain")] }) "/home/postWithoutSegment/21")
+          assertContentType "text/plain" r
+          return r
+      response <- runSession session app
+      simpleBody response `shouldBe` "Post 21"
+      (statusCode.simpleStatus) response `shouldBe` 200
     it "should pass the param from query param to handler" $ do
       let 
         session = do
@@ -204,8 +216,8 @@ main = hspec $ do
     it "should respond back with posted item" $ do
       let 
         session = do
-          let request = (setPath (defaultRequest { requestHeaders = [(hAccept, "application/json")],  requestMethod = "POST"}) "/home/profile/resume/add")
-          r <- srequest $ SRequest request $ Data.Aeson.encode $ Resume "John Doe"
+          let request_ = (setPath (defaultRequest { requestHeaders = [(hAccept, "application/json")],  requestMethod = "POST"}) "/home/profile/resume/add")
+          r <- srequest $ SRequest request_ $ Data.Aeson.encode $ Resume "John Doe"
           assertContentType "application/json" $ r
           return r
       response <- runSession session app
@@ -233,7 +245,7 @@ main = hspec $ do
   describe "routing" $ do
     it "should match when there is a param route but no exact match" $
       let
-        request = defaultRequest { requestMethod = "GET", pathInfo = ["seg1", "seg2", "seg3"] }
+        request_ = defaultRequest { requestMethod = "GET", pathInfo = ["seg1", "seg2", "seg3"] }
         routes = makeRoutes
           [ [ "seg1"
           , "seg4"
@@ -245,10 +257,10 @@ main = hspec $ do
           , "GET"
           ]
           ]
-      in lookupRequest request routes `shouldBe` (Just 1)
+      in lookupRequest request_ routes `shouldBe` (Just 1)
     it "should return param route match even when there is an exact match of lower precedence" $
       let
-        request = defaultRequest { requestMethod = "GET", pathInfo = ["seg1", "seg4", "seg3"] }
+        request_ = defaultRequest { requestMethod = "GET", pathInfo = ["seg1", "seg4", "seg3"] }
         routes = makeRoutes
           [ [ "seg1"
           , "seg4"
@@ -261,10 +273,10 @@ main = hspec $ do
           , "GET"
           ]
           ]
-      in lookupRequest request routes `shouldBe` (Just 0)
+      in lookupRequest request_ routes `shouldBe` (Just 0)
     it "should return exact route match even when there a param route of lower precedence" $
       let
-        request = defaultRequest { requestMethod = "GET", pathInfo = ["seg1", "seg4", "seg3"] }
+        request_ = defaultRequest { requestMethod = "GET", pathInfo = ["seg1", "seg4", "seg3"] }
         routes = makeRoutes
           [ [ "seg1"
           , "seg4"
@@ -276,10 +288,10 @@ main = hspec $ do
           , "GET"
           ]
           ]
-      in lookupRequest request routes `shouldBe` (Just 0)
+      in lookupRequest request_ routes `shouldBe` (Just 0)
     it "should match when incoming route exactly match with one in routes" $
       let
-        request = defaultRequest { requestMethod = "GET", pathInfo = ["seg1", "seg4", "seg3"] }
+        request_ = defaultRequest { requestMethod = "GET", pathInfo = ["seg1", "seg4", "seg3"] }
         routes = makeRoutes
           [ [ "seg1"
             , "seg4"
@@ -287,10 +299,10 @@ main = hspec $ do
             , "GET"
             ]
           ]
-      in lookupRequest request routes `shouldBe` Just 0
+      in lookupRequest request_ routes `shouldBe` Just 0
     it "should return Nothing when there is no matching route" $
       let
-        request = defaultRequest { requestMethod = "GET", pathInfo = ["seg1", "seg2", "seg2"] }
+        request_ = defaultRequest { requestMethod = "GET", pathInfo = ["seg1", "seg2", "seg2"] }
         routes = makeRoutes
           [ [ "seg1"
           , "seg4"
@@ -302,10 +314,10 @@ main = hspec $ do
           , "GET"
           ]
           ]
-      in lookupRequest request routes `shouldBe` Nothing
+      in lookupRequest request_ routes `shouldBe` Nothing
     it "should match correct one when there are many routes defined" $
       let
-        request = defaultRequest { requestMethod = "GET", pathInfo = ["seg5", "seg6", "seg7"] }
+        request_ = defaultRequest { requestMethod = "GET", pathInfo = ["seg5", "seg6", "seg7"] }
         routes = makeRoutes
           [ [ "seg1"
             , "seg4"
@@ -318,4 +330,4 @@ main = hspec $ do
             , "GET"
             ]
           ]
-      in lookupRequest request routes `shouldBe` Just 1
+      in lookupRequest request_ routes `shouldBe` Just 1

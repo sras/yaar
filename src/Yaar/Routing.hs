@@ -24,21 +24,23 @@ lookupRequest r !routes = let
   in lookupRoute routes routeSegments
 -- 
 lookupRoute :: Routes -> [RouteSegment] -> Maybe Int
-lookupRoute (RouteTree map_) [] =
-  case DM.lookup Terminator map_ of
-    Just (i, _) -> Just i
-    Nothing -> Nothing
-lookupRoute (RouteTree map_) (r:rs) =
-  -- Look for an exact match for the segment 'r' and for a wild card match
-  -- if both are found use the one with a higher precedence
-  -- or else just use the available one.
-  -- It none of them are found return Nothing indicating a route lookup failure
-  case (DM.lookup ParamSegment map_, DM.lookup r map_) of
-    (Just (px, x), Just (pw, w)) -> if px < pw then lookupRoute x rs else lookupRoute w rs
-    (Just (_, x), Nothing) -> lookupRoute x rs
-    (Nothing, Just (_, x)) -> lookupRoute x rs
-    (Nothing, Nothing) -> Nothing
-lookupRoute RouteEnd  _ = error "Routend should never be encountered during route segment look up"
+lookupRoute rts rss = case rts of
+  RouteEnd  -> error "Routend should never be encountered during route segment look up"
+  RouteTree map_ -> 
+    case rss of
+        [] -> case DM.lookup Terminator map_ of
+                Just (i, _) -> Just i
+                Nothing -> Nothing
+        (r:rs) ->
+          -- Look for an exact match for the segment 'r' and for a wild card match
+          -- if both are found use the one with a higher precedence
+          -- or else just use the available one.
+          -- It none of them are found return Nothing indicating a route lookup failure
+          case (DM.lookup ParamSegment map_, DM.lookup r map_) of
+            (Just (px, x), Just (pw, w)) -> if px < pw then lookupRoute x rs else lookupRoute w rs
+            (Just (_, x), Nothing) -> lookupRoute x rs
+            (Nothing, Just (_, x)) -> lookupRoute x rs
+            (Nothing, Nothing) -> Nothing
 
 makeRoutes :: [[Text]] -> Routes
 makeRoutes !x = foldl insertRoute (RouteTree DM.empty) $ (zipWith toRouteSegments (putMethodInfront <$> x) [0..])

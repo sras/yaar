@@ -24,6 +24,7 @@ module Yaar.Core
   , RunnableTo(..)
   , type (<|>)
   , UrlParam
+  , SegmentParam
   , GET
   , HEAD
   , POST
@@ -45,6 +46,7 @@ module Yaar.Core
   , ResponseFormat(..)
   , Server
   , Method(..)
+  , Loggers(..)
   )
 where
 
@@ -69,6 +71,7 @@ import Network.HTTP.Types (Status, HeaderName, hAccept, hContentType)
 import Network.HTTP.Types.Status (status200, status415, status404, status400, statusMessage)
 import Web.HttpApiData
 import Yaar.Routing
+-- import Control.Monad.Reader
 
 -- some boiler plate to convert type level lists to value level list
 --
@@ -112,7 +115,11 @@ instance Method POST where
 
 data ResponseFormat format s = ResponseFormat s
 
-data UrlParam (segment::Symbol) a = UrlParam a
+data UrlParam (segment :: Symbol) a = UrlParam a
+
+data SegmentParam a
+
+data SegmentParamNumbered (n :: Nat) a = SegmentParamNumbered a
 
 data a :> b
 
@@ -142,10 +149,13 @@ type family ExtractType a :: * -> * where
 type family UrlToRequestDerivable a
 
 type instance UrlToRequestDerivable  (UrlParam s a) = (UrlParam s a)
+type instance UrlToRequestDerivable  (SegmentParamNumbered s a) = (SegmentParamNumbered s a)
 
 type family RequestDerivableToHandlerArg a :: *
 
 type instance RequestDerivableToHandlerArg (UrlParam s a) = a
+
+type instance RequestDerivableToHandlerArg (SegmentParamNumbered s a) = a
 
 type family ExtractHandler (m :: * -> *) (a :: *)  where
   ExtractHandler m ((a :: Symbol) :> b) = (ExtractHandler m b)
@@ -163,6 +173,7 @@ type EUMessage (a :: Symbol) = ('TL.Text "type ") ':<>: ('TL.Text a) ':<>: ('TL.
 
 type family ExtractUrl (a :: k) :: [Symbol] where
   ExtractUrl ((UrlParam s a) :> b) = s : "::param::": ExtractUrl b
+  ExtractUrl ((SegmentParamNumbered s a) :> b) = "::param::": ExtractUrl b
   ExtractUrl ((a :: Symbol) :> b) = a : ExtractUrl b
   ExtractUrl (a :> b) = ExtractUrl b
   ExtractUrl (GET a) = TypeError (EUMessage "GET")
@@ -184,26 +195,48 @@ type family ExtractUrl (a :: k) :: [Symbol] where
   ExtractUrl (PATCH _ a) = '["PATCH"]
   ExtractUrl (CUSTOM s _ a) = '[s]
 
+type family NumberSegments (nat :: Nat) a where
+  NumberSegments nat (SegmentParam a :> b) = (SegmentParamNumbered nat a) :> (NumberSegments (nat + 1) b)
+  NumberSegments nat (a :> b) = a :> (NumberSegments (nat + 1) b)
+  NumberSegments nat a = a
+
 type family ReturnType a where
   ReturnType (a -> b) = ReturnType b
   ReturnType a = a
 
 type family ExtractUrlList a :: [[Symbol]] where
-  ExtractUrlList (a <|> b) = (ExtractUrl a):(ExtractUrlList b)
-  ExtractUrlList a = '[ExtractUrl a]
+  ExtractUrlList (a <|> b) = (ExtractUrl (NumberSegments 0 a)):(ExtractUrlList b)
+  ExtractUrlList a = '[ExtractUrl (NumberSegments 0 a)]
 
 class RequestDerivable a where
   extract :: Request -> IO (Either Status a)
 
+safeListIndex :: Int -> [a] -> Maybe a
+safeListIndex _ [] = Nothing
+safeListIndex 0 (a:_) = Just a
+safeListIndex a (_:xs) = safeListIndex (a-1) xs
+
 lookupUrlParam :: (FromHttpApiData a) => [Text] -> Text -> Either Status (UrlParam s a) 
 lookupUrlParam xs s = case elemIndex s xs of
-    Just i -> case parseUrlPiece $ xs !! (i+1) of
-      Right a -> Right $ UrlParam a
+    Just i -> case safeListIndex (i+1) xs of
+      Nothing -> Left $ status404
+      Just p -> case parseUrlPiece p of
+        Right a -> Right $ UrlParam a
+        Left err -> Left $ status400 { statusMessage = encodeUtf8 err}
+    Nothing -> Left $ status404
+
+lookupUrlSegment :: (FromHttpApiData a) => [Text] -> Int -> Either Status (SegmentParamNumbered s a) 
+lookupUrlSegment xs idx = case safeListIndex idx xs of
+    Just i -> case parseUrlPiece i of
+      Right a -> Right $ SegmentParamNumbered a
       Left err -> Left $ status400 { statusMessage = encodeUtf8 err}
     Nothing -> Left $ status404
 
 instance (FromHttpApiData a, KnownSymbol s) => RequestDerivable (UrlParam s a) where
-  extract req = return $ lookupUrlParam (pathInfo req) (pack $ symbolVal (Proxy :: Proxy s))
+  extract req = pure $ lookupUrlParam (pathInfo req) (pack $ symbolVal (Proxy :: Proxy s))
+
+instance (FromHttpApiData a, KnownNat nat) => RequestDerivable (SegmentParamNumbered nat a) where
+  extract req = pure $ lookupUrlSegment (pathInfo req) (fromIntegral $ natVal (Proxy :: Proxy nat))
 
 class Handler a where
   execute :: Request -> a -> IO Response
@@ -278,6 +311,9 @@ instance {-# OVERLAPPING #-} (Convertable c a, Convertable b d) => Convertable (
 instance Convertable (UrlParam s a) a where
   convert (UrlParam a) = a
 
+instance Convertable (SegmentParamNumbered s a) a where
+  convert (SegmentParamNumbered a) = a
+
 instance (Convertable a c, Handler c, Convertable b d) => Convertable (a <|> b) (c <|> d) where
   -- The separate constructors `Pair` and `HandlerPair` is relavant here.
   convert (Pair a b) = HandlerPair (convert a) (convert b)
@@ -299,7 +335,7 @@ type family RightServer a :: * where
   RightServer (a <|> b) = b
 
 type family ToHandlers (m :: * -> *) a where
-  ToHandlers m (a <|> b) = (ExtractHandler m a) <|> (ToHandlers m b)
+  ToHandlers m (a <|> b) = (ExtractHandler m (NumberSegments 0 a)) <|> (ToHandlers m b)
   ToHandlers m a = (ExtractHandler m a)
 
 (<|>) :: a -> b -> (a <|> b)
@@ -345,8 +381,16 @@ instance (Handler a) => ToHandlerStack a where
   -- The base of the handler stack, or if we have only one handler function.
   toHandlerStack a = AddToStack a EmptyStack
 
+data Loggers rid =
+  Loggers
+    { mkRequestId :: Request -> IO rid
+    , logRouteLookup :: rid -> Text -> IO rid
+    , logContentTypeMatch :: rid -> ByteString -> Request -> Bool -> IO ()
+    , logExecution :: rid -> Routes -> Request -> Response -> IO ()
+    }
+
 serve
-  :: forall a b e m.
+  :: forall a b e m rid.
   ( ManySymbolLists (ExtractUrlList a)
   , ToHandlerStack (ToHandlers YaarHandler a)
   , ExtractType b ~ m
@@ -355,14 +399,19 @@ serve
   , Convertable (ChangeEndpoint b) (ToHandlers YaarHandler a))
   => Proxy a
   -> b
-  -> (Request -> IO e)
+  -> (Request -> Maybe rid -> IO e)
+  -> Maybe (Loggers rid)
   -> Application
-serve _ h mkenv = application $ makeRoutes $ (toSymbolLists $ (Proxy :: Proxy (ExtractUrlList a)))
+serve _ h mkenv mloggers = application $ makeRoutes $ (toSymbolLists $ (Proxy :: Proxy (ExtractUrlList a)))
   where
     application !routes r respond =
       case lookupRequest r routes of
         Just n -> do
-          env <- mkenv r
+          env <- case mloggers of
+            Just loggers -> do
+              rid <- mkRequestId loggers r
+              mkenv r $ Just rid
+            Nothing -> mkenv r Nothing
           processRequest r (toHandlerStack $ (convert (runTos env h) :: (ToHandlers YaarHandler a))) n >>= respond
         Nothing -> respond $ responseLBS status404 [] $ "Path does not exist."
     processRequest :: Request -> HandlerStack -> Int -> IO Response

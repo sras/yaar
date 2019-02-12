@@ -40,7 +40,7 @@ import Data.ByteString.Char8 (unpack)
 instance ToSchema RouteInfoSimple where
   declareNamedSchema _ = pure $ NamedSchema (Just "RouteInfoSimple") mempty
 
-data RouteComponent = TextSegment String | ParaSegment String YaarSchema deriving (Generic)
+data RouteComponent = TextSegment String | ParaSegment (Maybe String) YaarSchema deriving (Generic)
 
 data KeyedSchema =
   KeyedSchema
@@ -104,7 +104,8 @@ instance Aeson.ToJSON RouteInfoSimple where
 
 toStringRouteComponent :: RouteComponent -> String
 toStringRouteComponent (TextSegment s) = s
-toStringRouteComponent (ParaSegment s _) = "{" ++ s ++ "}"
+toStringRouteComponent (ParaSegment (Just s) _) = "{" ++ s ++ "}"
+toStringRouteComponent (ParaSegment Nothing _) = "{param}"
 
 toSimpleRouteInfo :: RouteInfo -> RouteInfoSimple
 toSimpleRouteInfo r
@@ -147,7 +148,10 @@ instance (KnownSymbol a) => RouteInfoSegment a where
   addRouteInfo a = (\x -> x { routePath = (TextSegment $ symbolVal a):routePath x })
 
 instance (KnownSymbol a, ToYaarSchema b) => RouteInfoSegment (UrlParam a b) where
-  addRouteInfo _ = (\x -> x { routePath = (ParaSegment (symbolVal (Proxy :: Proxy a)) $ toYaarSchema (Proxy :: Proxy b) ):routePath x })
+  addRouteInfo _ = (\x -> x { routePath = (ParaSegment (Just $ symbolVal (Proxy :: Proxy a)) $ toYaarSchema (Proxy :: Proxy b) ):routePath x })
+
+instance (ToYaarSchema a) => RouteInfoSegment (SegmentParam a) where
+  addRouteInfo _ = (\x -> x { routePath = (ParaSegment Nothing $ toYaarSchema (Proxy :: Proxy a) ):routePath x })
 
 instance (RouteInfoSegment a, RouteInfoSegment b) => RouteInfoSegment (a :> b) where
   addRouteInfo _ = (addRouteInfo (Proxy :: Proxy a)) . (addRouteInfo (Proxy :: Proxy b))
