@@ -187,7 +187,24 @@ Use the type `UrlParam` in the type of the url as shown below
 ```
 
 The above use of `UrlParam` sets the endpoint handler to recieve a `Text` value
-passed via url in form `/home/post/id/asdf`.
+passed via url in form `/home/post/id/my-new-post`.
+
+The handler for this endpoint must accept a `Text` as its argument.
+
+```
+handlerPost :: Text -> IO String
+handlerPost postId = return $ "Post " ++ (unpack postId)
+```
+#### From url - unnamed segment format (/xyz/123)
+
+Use the type `SegmentParam` in the type of the url as shown below
+
+``` 
+"home" :> "post" :> SegmentParam Text :> (GET '[PlainText] String)
+```
+
+The above use of `SegmentParam` sets the endpoint handler to recieve a `Text` value
+passed via url in form `/home/post/my-new-post`.
 
 The handler for this endpoint must accept a `Text` as its argument.
 
