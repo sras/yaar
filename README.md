@@ -195,7 +195,7 @@ The handler for this endpoint must accept a `Text` as its argument.
 handlerPost :: Text -> IO String
 handlerPost postId = return $ "Post " ++ (unpack postId)
 ```
-#### From url - unnamed segment format (/xyz/123)
+#### From url - unnamed segment format (/123)
 
 Use the type `SegmentParam` in the type of the url as shown below
 
