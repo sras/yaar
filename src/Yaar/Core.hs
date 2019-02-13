@@ -390,7 +390,7 @@ instance (Handler a) => ToHandlerStack a where
 data Loggers rid =
   Loggers
     { mkRequestId :: Request -> IO rid
-    , logRouteLookup :: rid -> Text -> IO rid
+    , logRouteLookup :: rid -> Text -> IO ()
     , logContentTypeMatch :: rid -> ByteString -> Request -> Bool -> IO ()
     , logExecution :: rid -> Routes -> Request -> Response -> IO ()
     }
@@ -410,8 +410,18 @@ serve
   -> Application
 serve _ h mkenv mloggers = application $ makeRoutes $ (toSymbolLists $ (Proxy :: Proxy (ExtractUrlList a)))
   where
-    application !routes r respond =
-      case lookupRequest r routes of
+    application !routes r respond = do
+      mrid <-
+        case mloggers of
+          Just loggers -> Just <$> mkRequestId loggers r
+          Nothing -> pure Nothing
+      let 
+        routeLookup = do
+          loggers <- mloggers
+          rid <- mrid
+          pure $ logRouteLookup loggers rid
+      routeIndex <- lookupRequest r routes routeLookup
+      case routeIndex of
         Just n -> do
           env <- case mloggers of
             Just loggers -> do

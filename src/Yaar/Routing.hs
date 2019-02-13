@@ -5,7 +5,7 @@
 
 module Yaar.Routing (Routes, lookupRequest, lookupRoute, makeRoutes, printRoutes) where
 
-import Data.Text as T (unpack, Text, intercalate, concat)
+import Data.Text as T (unpack, Text, intercalate, concat, pack)
 import Data.Text.Encoding (decodeUtf8)
 import Data.Map.Strict as DM (Map, toList, empty, lookup, insert)
 import Network.Wai ( Request , requestMethod , pathInfo)
@@ -18,29 +18,53 @@ data Routes = RouteTree (Map RouteSegment (Int, Routes)) | RouteEnd deriving (Sh
 -- Route with an Precedence field
 --
 
-lookupRequest :: Request -> Routes -> Maybe Int
-lookupRequest r !routes = let
+routingLog :: Maybe (Text -> IO ()) -> Text -> IO ()
+routingLog logger l =
+  case logger of
+    Just lgr -> lgr l
+    Nothing -> pure ()
+
+lookupRequest :: Request -> Routes -> Maybe (Text -> IO ()) -> IO (Maybe Int)
+lookupRequest r !routes mlogger = let
   routeSegments = ((MethodSegment $ decodeUtf8 $ requestMethod r):(UrlSegment <$> pathInfo r))
-  in lookupRoute routes routeSegments
--- 
-lookupRoute :: Routes -> [RouteSegment] -> Maybe Int
-lookupRoute rts rss = case rts of
+  in do
+      routingLog mlogger $ T.concat ["Trying to match route: ", T.pack $ show routeSegments]
+      routingLog mlogger $ printRoutes routes
+      lookupRoute (routingLog mlogger) routes routeSegments 
+
+lookupRoute :: (Text -> IO ()) -> Routes -> [RouteSegment] -> IO (Maybe Int)
+lookupRoute logger rts rss = case rts of
   RouteEnd  -> error "Routend should never be encountered during route segment look up"
   RouteTree map_ -> 
     case rss of
-        [] -> case DM.lookup Terminator map_ of
+        [] -> pure $ case DM.lookup Terminator map_ of
                 Just (i, _) -> Just i
                 Nothing -> Nothing
-        (r:rs) ->
+        (r:rs) -> do
+          logger $ T.concat ["Matching segment ", (pack $ show r)]
           -- Look for an exact match for the segment 'r' and for a wild card match
           -- if both are found use the one with a higher precedence
           -- or else just use the available one.
           -- It none of them are found return Nothing indicating a route lookup failure
           case (DM.lookup ParamSegment map_, DM.lookup r map_) of
-            (Just (px, x), Just (pw, w)) -> if px < pw then lookupRoute x rs else lookupRoute w rs
-            (Just (_, x), Nothing) -> lookupRoute x rs
-            (Nothing, Just (_, x)) -> lookupRoute x rs
-            (Nothing, Nothing) -> Nothing
+            (Just (px, x), Just (pw, w)) -> do
+              logger $ T.concat ["Found matches for a parameter and '", pack $ show r ,"'"]
+              if px < pw
+                then do
+                  logger $ T.concat ["Selecting matches with higher priority: ParamSegment"]
+                  lookupRoute logger x rs
+                else do
+                  logger $ T.concat ["Selecting matches with higher priority: ", pack $ show r]
+                  lookupRoute logger w rs
+            (Just (_, x), Nothing) -> do
+              logger $ T.concat ["Found exact match for: ", pack $ show r]
+              lookupRoute logger x rs
+            (Nothing, Just (_, x)) -> do
+              logger $ T.concat ["Found a param match"]
+              lookupRoute logger x rs
+            (Nothing, Nothing) -> do
+              logger $ T.concat ["No match found. Look up failed."]
+              pure Nothing
 
 makeRoutes :: [[Text]] -> Routes
 makeRoutes !x = foldl insertRoute (RouteTree DM.empty) $ (zipWith toRouteSegments (putMethodInfront <$> x) [0..])
