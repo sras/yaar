@@ -1,7 +1,7 @@
 # Yaar
 
 If you are aware of Haskell's `Servant` framework, Yaar is an attempt to independently implement an interface that loosly resembels that of Servant.
-If you are not aware of `Servant`, what `Servant` and this framework can give you is a specification/documentation of the api that is gauranteed (by the type checker) to be in sync with the actual implementation.
+If you are not aware of `Servant`, what this interface enables you is the auto generation of api spec that is gauranteed (by the type checker) to be in sync with the actual implementation.
 
 ### How to make a web application using Yaar?
 
