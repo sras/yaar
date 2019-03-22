@@ -1,25 +1,11 @@
 # Yaar
 
-*** This is an experimental type level framework for bulding type safe web applications. Do not use it in production. ***
-
-DISCLAIMER: This originally started as an exercise in type level programming,
-one where I tried to implement something like the type level api provided by
-the Haskell's 'Servant' framework. Implementing this was mostly a
-matter of throwing random stuff at the wall and seeing what sticks.
-
-Right now, it can do the following.
-
-1. Endpoint handlers can have arguments that can come from the url (as segments or via key=value query pairs) or the request body.
-2. Each endpoint can accept the input in multiple formats.
-3. Each endpoint can respond in multiple formats.
-4. Auto generate api documentation from endpoint types.
+### How to make a web application using Yaar?
 
 Please see the `test/Spec.hs` file in this repo to see a sample app.
 
-
-### How to make a web application using Yaar?
-
-Each endpoint/route in a Yaar application has its own type, that looks like the following.
+Each endpoint/route in a Yaar application has its own type. This type specifies the kinds of inputs the route can accept, the types and possible encodings for those inputs,  the output type and the possible encodings for the output.
+The type for a route can look something like this.
 
 ```
 "home" :> "profile" :> "bio" :> (GET '[HTML] Text)
