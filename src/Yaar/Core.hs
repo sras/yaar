@@ -21,6 +21,7 @@ module Yaar.Core
   ( (:>)
   , (<|>)
   , YaarHandler
+  , RPMonad
   , RunnableTo(..)
   , type (<|>)
   , UrlParam
@@ -70,6 +71,7 @@ import Network.Wai
 import Network.HTTP.Types (Status, HeaderName, hAccept, hContentType)
 import Network.HTTP.Types.Status (status200, status415, status404, status400, statusMessage)
 import Web.HttpApiData
+import Control.Monad.Reader
 import Yaar.Routing
 -- import Control.Monad.Reader
 
@@ -131,7 +133,10 @@ data a :> b
 
 infixr 9 :>
 
+type Logger = Text -> IO ()
+
 type YaarHandler = IO
+type RPMonad = ReaderT (Maybe Logger) IO
 
 type family IsEqual a b where
   IsEqual a a = a
@@ -154,8 +159,8 @@ type family ExtractType a :: * -> * where
 
 type family UrlToRequestDerivable a
 
-type instance UrlToRequestDerivable  (UrlParam s a) = (UrlParam s a)
-type instance UrlToRequestDerivable  (SegmentParamNumbered s a) = (SegmentParamNumbered s a)
+type instance UrlToRequestDerivable (UrlParam s a) = (UrlParam s a)
+type instance UrlToRequestDerivable (SegmentParamNumbered s a) = (SegmentParamNumbered s a)
 
 type family RequestDerivableToHandlerArg a :: *
 
@@ -215,21 +220,12 @@ type family ExtractUrlList a :: [[Symbol]] where
   ExtractUrlList a = '[ExtractUrl (NumberSegments 0 a)]
 
 class RequestDerivable a where
-  extract :: Request -> IO (Either Status a)
+  extract :: Request -> RPMonad (Either Status a)
 
 safeListIndex :: Int -> [a] -> Maybe a
 safeListIndex _ [] = Nothing
 safeListIndex 0 (a:_) = Just a
 safeListIndex a (_:xs) = safeListIndex (a-1) xs
-
-lookupUrlParam :: (FromHttpApiData a) => [Text] -> Text -> Either Status (UrlParam s a) 
-lookupUrlParam xs s = case elemIndex s xs of
-    Just i -> case safeListIndex (i+1) xs of
-      Nothing -> Left $ status404
-      Just p -> case parseUrlPiece p of
-        Right a -> Right $ UrlParam a
-        Left err -> Left $ status400 { statusMessage = encodeUtf8 err}
-    Nothing -> Left $ status404
 
 lookupUrlSegment :: (FromHttpApiData a) => [Text] -> Int -> Either Status (SegmentParamNumbered s a) 
 lookupUrlSegment xs idx = case safeListIndex idx xs of
@@ -240,12 +236,21 @@ lookupUrlSegment xs idx = case safeListIndex idx xs of
 
 instance (FromHttpApiData a, KnownSymbol s) => RequestDerivable (UrlParam s a) where
   extract req = pure $ lookupUrlParam (pathInfo req) (pack $ symbolVal (Proxy :: Proxy s))
+    where
+    lookupUrlParam :: (FromHttpApiData a) => [Text] -> Text -> Either Status (UrlParam s a) 
+    lookupUrlParam xs s = case elemIndex s xs of
+        Just i -> case safeListIndex (i+1) xs of
+          Nothing -> Left $ status404
+          Just p -> case parseUrlPiece p of
+            Right a -> Right $ UrlParam a
+            Left err -> Left $ status400 { statusMessage = encodeUtf8 err}
+        Nothing -> Left $ status404
 
 instance (FromHttpApiData a, KnownNat nat) => RequestDerivable (SegmentParamNumbered nat a) where
   extract req = pure $ lookupUrlSegment (pathInfo req) (fromIntegral $ natVal (Proxy :: Proxy nat))
 
 class Handler a where
-  execute :: Request -> a -> IO Response
+  execute :: Request -> a -> RPMonad Response
 
 instance (Handler b, RequestDerivable a) => Handler (a -> b) where
   execute r fn = do
@@ -256,7 +261,7 @@ instance (Handler b, RequestDerivable a) => Handler (a -> b) where
 
 instance {-# OVERLAPPABLE #-} (ToResponse format a) => Handler (ResponseFormat format (YaarHandler a)) where
   execute _ (ResponseFormat a) = do
-    v <- a
+    v <- liftIO a
     return $ toResponse v (Proxy :: Proxy format)
 
 instance (ToResponse format a, ContentType format, Handler (ResponseFormat formats (YaarHandler a))) => Handler (ResponseFormat (format:formats) (YaarHandler a)) where
@@ -390,9 +395,7 @@ instance (Handler a) => ToHandlerStack a where
 data Loggers rid =
   Loggers
     { mkRequestId :: Request -> IO rid
-    , logRouteLookup :: rid -> Text -> IO ()
-    , logContentTypeMatch :: rid -> ByteString -> Request -> Bool -> IO ()
-    , logExecution :: rid -> Routes -> Request -> Response -> IO ()
+    , loggerFunc :: rid -> Text -> IO ()
     }
 
 serve
@@ -415,22 +418,24 @@ serve _ h mkenv mloggers = application $ makeRoutes $ (toSymbolLists $ (Proxy ::
         case mloggers of
           Just loggers -> Just <$> mkRequestId loggers r
           Nothing -> pure Nothing
-      let 
+      let
         routeLookup = do
           loggers <- mloggers
           rid <- mrid
-          pure $ logRouteLookup loggers rid
+          pure $ loggerFunc loggers rid
       routeIndex <- lookupRequest r routes routeLookup
       case routeIndex of
         Just n -> do
-          env <- case mloggers of
+          case mloggers of
             Just loggers -> do
               rid <- mkRequestId loggers r
-              mkenv r $ Just rid
-            Nothing -> mkenv r Nothing
-          processRequest r (toHandlerStack $ (convert (runTos env h) :: (ToHandlers YaarHandler a))) n >>= respond
+              env <- mkenv r $ Just rid
+              processRequest r (Just $ loggerFunc loggers rid) (toHandlerStack $ (convert (runTos env h) :: (ToHandlers YaarHandler a))) n >>= respond
+            Nothing -> do
+              env <- mkenv r Nothing
+              processRequest r Nothing (toHandlerStack $ (convert (runTos env h) :: (ToHandlers YaarHandler a))) n >>= respond
         Nothing -> respond $ responseLBS status404 [] $ "Path does not exist."
-    processRequest :: Request -> HandlerStack -> Int -> IO Response
-    processRequest r (AddToStack h_ _) 0 = execute r h_
-    processRequest r (AddToStack __ b) c = processRequest r b (c-1)
-    processRequest _ EmptyStack _ = error "Cannot add empty stack on a non empty stack"
+    processRequest :: Request -> Maybe Logger -> HandlerStack -> Int -> IO Response
+    processRequest r mrpl (AddToStack h_ _) 0 = runReaderT (execute r h_) mrpl
+    processRequest r mrpl (AddToStack __ b) c = processRequest r mrpl b (c-1)
+    processRequest _ _ EmptyStack _ = error "Cannot add empty stack on a non empty stack"

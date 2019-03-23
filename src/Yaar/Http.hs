@@ -44,6 +44,7 @@ import qualified Data.ByteString.Lazy as LB
 import Data.String
 import Data.Proxy
 import Web.HttpApiData
+import Control.Monad.IO.Class
 
 data OctetStream
 
@@ -57,7 +58,7 @@ instance Encodable NoContent NoContent where
 
 instance Handler (ResponseFormat NoContent (YaarHandler a)) where
   execute _ (ResponseFormat h) = do
-    _ <- h
+    _ <- liftIO h
     return $ responseLBS status200 [] ""
 
 -- to add support for input coming in request body
@@ -105,7 +106,7 @@ instance RequestDerivable (RequestBody '[] a) where
 
 instance (FromJSON a) => RequestDerivable (RequestBody JSON a) where
   extract req = do
-    body <- lazyRequestBody req
+    body <- liftIO $ lazyRequestBody req
     return $ case eitherDecode body of
       Right a -> Right $ RequestBody a
       Left err -> Left $ status400 { statusMessage = encodeUtf8 $ pack $ "Decoding error" ++ err }
@@ -126,7 +127,7 @@ data RequestHeader (s :: Symbol) a = RequestHeader a
 type instance UrlToRequestDerivable (RequestHeader s a) = RequestHeader s a
 
 instance (FromHttpApiData a, KnownSymbol s) => RequestDerivable (RequestHeader s a) where
-  extract request = return $ extractHeaderValue (requestHeaders request) (symbolVal (Proxy :: Proxy s))
+  extract request = pure $ extractHeaderValue (requestHeaders request) (symbolVal (Proxy :: Proxy s))
     where
       extractHeaderValue :: [Header] -> String -> Either Status (RequestHeader s a)
       extractHeaderValue headers headerName =
