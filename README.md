@@ -3,6 +3,13 @@
 Yaar is an attempt to independently implement an interface that loosly resembels that of Haskell's `Servant` web framework.
 If you are not aware of `Servant`, what this interface enables you is the auto generation of api spec that is gauranteed (by the type checker) to be in sync with the actual implementation.
 
+### Why did you make this?
+
+Because I get to play god! 
+
+Actually, this started as an excercise in type level programming by the author who didn't really know type level programming at the time.
+In contrast, the `Servant` framework started as a research paper or something. 
+
 ### How to make a web application using Yaar?
 
 Please see the `test/Spec.hs` file in this repo to see a sample app.
@@ -343,6 +350,14 @@ app = serve (Proxy :: Proxy AppType) appHandlers $ (\r -> ())
 
 
 ### Internals Overview
+
+Before we go into Internals, I just need to say that type families are a function that takes in a type and returns another type.  
+
+```
+type family MyTypeFam a :: (*->*) ->* where
+  MyTypeFam a = a Int
+```  
+
 
 First let us see how a Haskell type gets converted into a bunch of string paths that the router can lookup while routing. Let the following be the type of our app. It has only two endpoints
 
