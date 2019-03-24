@@ -272,7 +272,7 @@ instance (ToJSON a) => Encodable JSON a where
 
 That is about it.
 
-### How to make a type available via query param, url segment or via header
+### How to make input available via query param, url segment or via header
 
 All of these are done via the [FromHttpApiData](https://hackage.haskell.org/package/http-api-data-0.4/docs/Web-HttpApiData.html#t:FromHttpApiData) typeclass in [http-api-data](http://hackage.haskell.org/package/http-api-data) package.
 
