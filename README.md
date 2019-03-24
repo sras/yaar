@@ -3,13 +3,6 @@
 Yaar is an attempt to independently implement an interface that loosly resembels that of Haskell's `Servant` web framework.
 If you are not aware of `Servant`, what this interface enables you is the auto generation of api spec that is gauranteed (by the type checker) to be in sync with the actual implementation.
 
-### Why did you make this?
-
-Because I get to play god! 
-
-Actually, this started as an excercise in type level programming by the author who didn't really know type level programming at the time.
-In contrast, the `Servant` framework started as a research paper or something. 
-
 ### How to make a web application using Yaar?
 
 Please see the `test/Spec.hs` file in this repo to see a sample app.
