@@ -148,6 +148,7 @@ handlerWithHeader = pure $
 
 ### How to take input
 
+
 #### From url - query format (?xyz=123)
 
 Use the type `QueryParam` in the type of the url as shown below
@@ -157,7 +158,8 @@ Use the type `QueryParam` in the type of the url as shown below
 ```
 
 The above use of `QueryParam` sets the endpoint handler to recieve a `Text` value
-passed via url in form `/home/post?id=asdf`.
+passed via url in form `/home/post?id=asdf`. The type that is being recieved, (here `Text`)
+should be an instance of [FromHttpApiData](https://hackage.haskell.org/package/http-api-data-0.4/docs/Web-HttpApiData.html#t:FromHttpApiData) typeclass in [http-api-data](http://hackage.haskell.org/package/http-api-data) package.
 
 The handler for this endpoint must accept a `Maybe Text` as its argument. It is a `Maybe` 
 because the route could be accessed without the query parameter.
@@ -176,7 +178,8 @@ Use the type `UrlParam` in the type of the url as shown below
 ```
 
 The above use of `UrlParam` sets the endpoint handler to recieve a `Text` value
-passed via url in form `/home/post/id/my-new-post`.
+passed via url in form `/home/post/id/my-new-post`. The type that is being recieved, (here `Text`)
+should be an instance of [FromHttpApiData](https://hackage.haskell.org/package/http-api-data-0.4/docs/Web-HttpApiData.html#t:FromHttpApiData) typeclass in [http-api-data](http://hackage.haskell.org/package/http-api-data) package.
 
 The handler for this endpoint must accept a `Text` as its argument.
 
@@ -193,7 +196,8 @@ Use the type `SegmentParam` in the type of the url as shown below
 ```
 
 The above use of `SegmentParam` sets the endpoint handler to recieve a `Text` value
-passed via url in form `/home/post/my-new-post`.
+passed via url in form `/home/post/my-new-post`. The type that is being recieved, (here `Text`)
+should be an instance of [FromHttpwApiData](https://hackage.haskell.org/package/http-api-data-0.4/docs/Web-HttpApiData.html#t:FromHttpApiData) typeclass in [http-api-data](http://hackage.haskell.org/package/http-api-data) package.
 
 The handler for this endpoint must accept a `Text` as its argument.
 
@@ -212,7 +216,8 @@ Use the type `ReqBody` in the endpoint type as shown below.
 ```
 
 The above use of `ReqBody` enables the endpoint to get a value of type
-`Resume` in `JSON` format in the body of the POST request.
+`Resume` in `JSON` format in the body of the POST request. The type that is being recieved, (here `Resume`)
+should have a `FromJSON` instance.
 
 The handler must be a function with an argument of type `Resume`
 
@@ -233,6 +238,7 @@ The above use of `ReqBody` enables the endpoint to get a value of type
 `Resume` in `JSON` format in the body of the POST request.
 
 The handler must be a function with an argument of type `Text` (because that is what is specified by `RequestHeader "input-header" Text` in url's type).
+The type that is being recieved, (here `Text`) should be an instance of [FromHttpwApiData](https://hackage.haskell.org/package/http-api-data-0.4/docs/Web-HttpApiData.html#t:FromHttpApiData) typeclass in [http-api-data](http://hackage.haskell.org/package/http-api-data) package.
 
 ```
 handlerHeaderInput :: Text -> IO String
@@ -272,11 +278,6 @@ instance (ToJSON a) => Encodable JSON a where
 
 That is about it.
 
-### How to make input available via query param, url segment or via header
-
-All of these are done via the [FromHttpApiData](https://hackage.haskell.org/package/http-api-data-0.4/docs/Web-HttpApiData.html#t:FromHttpApiData) typeclass in [http-api-data](http://hackage.haskell.org/package/http-api-data) package.
-
-As long as a type has this instance, you will be able to get it in a url query, url segment or via a http header.
 
 ### How to accept a new format via RequestBody
 
