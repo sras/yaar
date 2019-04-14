@@ -480,15 +480,150 @@ If you access this endpoint using `curl`, you will get something like this..
 ]
 
 ```
-### Internals Overview
 
-Before we go into Internals, just keep in mind that type families are a just type level functions that takes in a type and returns another type. The type of the endpoint is
-
+In the above, you can see that the `routeOutput` for each end point is NULL. This is because the output type of the endpoints, ie `Text` type lack a `ToYaarSchema` instance.
+Let us add it and see how the output changes.
 
 ```
-type family MyTypeFam a :: (*->*) ->* where
-  MyTypeFam a = a Int
-```  
+{-# Language OverloadedStrings #-}
+{-# Language TypeOperators #-}
+{-# Language FlexibleInstances #-}
+{-# Language FlexibleContexts #-}
+{-# Language DataKinds #-}
+{-# Language DeriveGeneric #-}
+{-# Language MultiParamTypeClasses #-}
+{-# Language TypeFamilies #-}
+
+module Main where
+
+import Yaar
+import Data.Text
+import Data.Proxy
+
+type AppType
+   =  "home" :> "profile" :> "bio" :> (GET '[HTML] Text)
+  <|> "home" :> "profile" :> "contact" :> (GET '[HTML] Text)
+  <|> "api" :> "schema" :> (GET '[JSON] [RouteInfoSimple])
+
+data Contact = Contact Text
+
+instance ToYaarSchema Text where
+  toYaarSchema _ =
+    Simple $
+      SimpleSchema
+        { schemaTypeName = "Text"
+        , schemaProperties = []
+        }
+
+bioHandler :: IO Text
+bioHandler = pure "This is my Bio"
+
+contactHandler :: IO Text
+contactHandler = pure "This is my contact info"
+
+appHandlers :: Server AppType IO
+appHandlers
+  = bioHandler
+ <|> contactHandler
+ <|> apiDoc
+
+appProxy :: Proxy AppType
+appProxy = Proxy
+
+app :: Application
+app = serve appProxy appHandlers (\_ _ -> pure ()) Nothing
+
+apiDoc :: IO [RouteInfoSimple]
+apiDoc = pure $ toSimpleRouteInfo <$> toApiDocList appProxy
+
+main :: IO ()
+main = run 4000 app
+
+```
+
+Now the endpoint outputs
+
+```
+[
+   {
+      "routePath":"home/profile/bio",
+      "routeRequestBody":null,
+      "routeRequestBodyFormat":[
+
+      ],
+      "routeQuery":[
+
+      ],
+      "routeOutput":{
+         "schemaProperties":[
+
+         ],
+         "schemaTypeName":"Text"
+      },
+      "routeMethod":"GET",
+      "routeRequestHeaders":[
+
+      ],
+      "routeParams":[
+
+      ],
+      "routeOutputFormat":[
+         "text/html"
+      ]
+   },
+   {
+      "routePath":"home/profile/contact",
+      "routeRequestBody":null,
+      "routeRequestBodyFormat":[
+
+      ],
+      "routeQuery":[
+
+      ],
+      "routeOutput":{
+         "schemaProperties":[
+
+         ],
+         "schemaTypeName":"Text"
+      },
+      "routeMethod":"GET",
+      "routeRequestHeaders":[
+
+      ],
+      "routeParams":[
+
+      ],
+      "routeOutputFormat":[
+         "text/html"
+      ]
+   },
+   {
+      "routePath":"api/schema",
+      "routeRequestBody":null,
+      "routeRequestBodyFormat":[
+
+      ],
+      "routeQuery":[
+
+      ],
+      "routeOutput":null,
+      "routeMethod":"GET",
+      "routeRequestHeaders":[
+
+      ],
+      "routeParams":[
+
+      ],
+      "routeOutputFormat":[
+         "application/json"
+      ]
+   }
+]
+```
+
+There! The output for the endpoints that output a `Text` value is no longer Null.
+
+### Internals Overview
 
 
 First let us see how a Haskell type gets converted into a bunch of string paths that the router can lookup while routing. Let the following be the type of our app. It has only two endpoints

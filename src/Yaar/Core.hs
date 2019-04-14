@@ -57,7 +57,7 @@ import Data.List
 
 import Data.ByteString as BS (ByteString, isInfixOf)
 import Data.ByteString.Lazy (fromStrict)
-import Data.Text (pack, Text)
+import Data.Text as T (pack, Text, concat) 
 import Data.Text.Encoding (encodeUtf8)
 
 import Network.Wai
@@ -264,14 +264,26 @@ instance {-# OVERLAPPABLE #-} (ToResponse format a) => Handler (ResponseFormat f
     v <- liftIO a
     return $ toResponse v (Proxy :: Proxy format)
 
+logRp :: Text -> RPMonad ()
+logRp t = do
+  l <- ask
+  case l of
+    Just logger -> liftIO $ logger t
+    Nothing -> pure ()
+
 instance (ToResponse format a, ContentType format, Handler (ResponseFormat formats (YaarHandler a))) => Handler (ResponseFormat (format:formats) (YaarHandler a)) where
-  execute r (ResponseFormat a) = if requestMatchContentType r
-    then execute r (ResponseFormat a :: ResponseFormat format (YaarHandler a))
-    else execute r (ResponseFormat a :: ResponseFormat formats (YaarHandler a))
+  execute r (ResponseFormat a) = do
+    let acceptHeader = lookupHeader r hAccept
+    if requestMatchContentType acceptHeader
+    then do
+      execute r (ResponseFormat a :: ResponseFormat format (YaarHandler a))
+    else do
+      logRp $ T.concat ["Accept header mismatch :  ", pack $ show acceptHeader]
+      execute r (ResponseFormat a :: ResponseFormat formats (YaarHandler a))
     where
-      requestMatchContentType :: Request -> Bool
-      requestMatchContentType request =
-        doesMatch (Proxy :: Proxy format) $ lookupHeader request hAccept
+      requestMatchContentType :: Maybe ByteString -> Bool
+      requestMatchContentType mHeader =
+        doesMatch (Proxy :: Proxy format) mHeader
       lookupHeader :: Request -> HeaderName -> Maybe ByteString
       lookupHeader r_ h = lookup h $ requestHeaders r_
 

@@ -29,7 +29,10 @@ lookupRequest r !routes mlogger = let
   routeSegments = ((MethodSegment $ decodeUtf8 $ requestMethod r):(UrlSegment <$> pathInfo r))
   in do
       routingLog mlogger $ T.concat ["Trying to match route: ", T.pack $ show routeSegments]
+      routingLog mlogger $ "App Routes:"
+      routingLog mlogger $ "---"
       routingLog mlogger $ printRoutes routes
+      routingLog mlogger $ "---"
       lookupRoute (routingLog mlogger) routes routeSegments 
 
 lookupRoute :: (Text -> IO ()) -> Routes -> [RouteSegment] -> IO (Maybe Int)
@@ -60,7 +63,7 @@ lookupRoute logger rts rss = case rts of
               logger $ T.concat ["Found exact match for: ", pack $ show r]
               lookupRoute logger x rs
             (Nothing, Just (_, x)) -> do
-              logger $ T.concat ["Found a param match"]
+              logger $ T.concat ["Found a segment match"]
               lookupRoute logger x rs
             (Nothing, Nothing) -> do
               logger $ T.concat ["No match found. Look up failed."]
