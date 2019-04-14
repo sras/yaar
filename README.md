@@ -51,7 +51,7 @@ And we finally make a `wai` `Application` from our handlers and handler types us
 
 ```
 app :: Application
-app = serve (Proxy :: Proxy AppType) appHandlers $ const $ pure ()
+app = serve (Proxy :: Proxy AppType) appHandlers (\_ _ -> pure ()) Nothing
 ```
 
 The last argument here is an function that creates an environment derived from the incoming request, for the handlers to execute. By default our handlers run in IO, and does not require an environment to run and thus we are passing the empty tuple as the environment.
@@ -68,8 +68,6 @@ The last argument here is an function that creates an environment derived from t
 import Yaar
 import Data.Text
 import Data.Proxy
-import Network.Wai (Application)
-import Network.Wai.Handler.Warp (run)
 
 type AppType
    =  "home" :> "profile" :> "bio" :> (GET '[HTML] Text)
@@ -87,7 +85,7 @@ appHandlers
  <|> contactHandler
 
 app :: Application
-app = serve (Proxy :: Proxy AppType) appHandlers $ const $ pure ()
+app = serve (Proxy :: Proxy AppType) appHandlers (\_ _ -> pure ()) Nothing
 
 main = run 4000 app
 ```
@@ -343,6 +341,10 @@ Here is how we pass the environment creation function to the serve function.
 app :: Application
 app = serve (Proxy :: Proxy AppType) appHandlers $ (\r -> ())
 ```
+
+### Automatic Documentation Generation
+
+
 
 
 ### Internals Overview
