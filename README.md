@@ -321,7 +321,7 @@ class RunnableTo m1 m2 e where
   runTo :: e -> m1 a -> m2 a
 ```
 
-In the signature of `runTo` function, `e` is an environment value, `m1` is the monad which we want the handlers to run in and `m2` should be the `IO` monad.
+In the signature of `runTo` function, `e` is an environment value, `m1` is the monad which we want the handlers to run in and `m2` should be the `YaarHandler` (which is just `IO` for the time being) monad.
 So if we want our handlers to run in `Identity` monad, here is how we can do it.
 
 ```
