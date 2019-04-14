@@ -22,8 +22,10 @@ description:         "A web framework"
 dependencies:
 - base >= 4.7 && < 5
 - text
+- mtl
 - bytestring
 - wai
+- warp
 - http-types
 - containers
 - aeson
@@ -50,5 +52,6 @@ tests:
     dependencies:
     - wai
     - wai-extra
+    - warp
     - yaar
     - hspec

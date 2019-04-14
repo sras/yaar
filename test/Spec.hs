@@ -118,7 +118,7 @@ main = hspec $ do
   describe "Router test" $ do
     it "should do basic matching" $ do
       let routes = makeRoutes [["home", "post", "id", "GET"]]
-      (lookupRequest (setPath defaultRequest "/home/post/id") routes) `shouldBe` (Just 0)
+      (lookupRequest (setPath defaultRequest "/home/post/id") routes) Nothing `shouldReturn` (Just 0)
   describe "basic-behavior-in-another-monad" $ do
     it "should generate the right response - 1" $ do
       let session = request (setPath defaultRequest "/home/profile/bio")
@@ -257,7 +257,7 @@ main = hspec $ do
           , "GET"
           ]
           ]
-      in lookupRequest request_ routes `shouldBe` (Just 1)
+      in lookupRequest request_ routes Nothing `shouldReturn` (Just 1)
     it "should return param route match even when there is an exact match of lower precedence" $
       let
         request_ = defaultRequest { requestMethod = "GET", pathInfo = ["seg1", "seg4", "seg3"] }
@@ -273,7 +273,7 @@ main = hspec $ do
           , "GET"
           ]
           ]
-      in lookupRequest request_ routes `shouldBe` (Just 0)
+      in lookupRequest request_ routes Nothing `shouldReturn` (Just 0)
     it "should return exact route match even when there a param route of lower precedence" $
       let
         request_ = defaultRequest { requestMethod = "GET", pathInfo = ["seg1", "seg4", "seg3"] }
@@ -288,7 +288,7 @@ main = hspec $ do
           , "GET"
           ]
           ]
-      in lookupRequest request_ routes `shouldBe` (Just 0)
+      in lookupRequest request_ routes Nothing `shouldReturn` (Just 0)
     it "should match when incoming route exactly match with one in routes" $
       let
         request_ = defaultRequest { requestMethod = "GET", pathInfo = ["seg1", "seg4", "seg3"] }
@@ -299,7 +299,7 @@ main = hspec $ do
             , "GET"
             ]
           ]
-      in lookupRequest request_ routes `shouldBe` Just 0
+      in lookupRequest request_ routes Nothing `shouldReturn` (Just 0)
     it "should return Nothing when there is no matching route" $
       let
         request_ = defaultRequest { requestMethod = "GET", pathInfo = ["seg1", "seg2", "seg2"] }
@@ -314,7 +314,7 @@ main = hspec $ do
           , "GET"
           ]
           ]
-      in lookupRequest request_ routes `shouldBe` Nothing
+      in lookupRequest request_ routes Nothing `shouldReturn` Nothing
     it "should match correct one when there are many routes defined" $
       let
         request_ = defaultRequest { requestMethod = "GET", pathInfo = ["seg5", "seg6", "seg7"] }
@@ -330,4 +330,4 @@ main = hspec $ do
             , "GET"
             ]
           ]
-      in lookupRequest request_ routes `shouldBe` Just 1
+      in (lookupRequest request_ routes Nothing) `shouldReturn` (Just 1)
